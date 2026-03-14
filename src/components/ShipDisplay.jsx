@@ -37,7 +37,7 @@ export function ShipDisplay() {
       {/* Корабль с анимацией вверх-вниз */}
       <div className="absolute inset-0 flex items-center justify-center">
         <img
-          src="/images/ship.png"
+          src={`${import.meta.env.BASE_URL}images/ship.png`}
           alt="Корабль"
           className="h-20 w-auto object-contain animate-ship-bob"
         />
