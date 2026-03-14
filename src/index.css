@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+  @apply bg-zinc-950 text-zinc-300 antialiased;
+}
+
+/* Терминальный стиль: чёткие границы, моноширинный шрифт */
+.terminal-panel {
+  @apply rounded border-2 border-zinc-600 bg-zinc-900/95 font-mono;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.3) inset;
+}
+
+@keyframes ship-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+.animate-ship-bob {
+  animation: ship-bob 2.5s ease-in-out infinite;
+}
