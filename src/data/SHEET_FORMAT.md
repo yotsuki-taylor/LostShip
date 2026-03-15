@@ -67,6 +67,7 @@
 | Role | Должность (отображаемая) |
 | Name | Имена через запятую — выбирается случайное |
 | HP | Стартовое здоровье (0–20). Статус: HP=20 → работает, HP<20 → ранен, HP=0 → убит |
-| Avatar | URL аватарки (опционально) |
+
+Аватарка берётся из `public/images/{id}.png`, где id — значение колонки ID (например, navigator → navigator.png).
 
 События в основной таблице могут использовать старый формат в `opt_consequences`: `hull`, `crew`, `stability`, `scrap`, `energy` — `crew` и `stability` маппятся в `morale`, `scrap` в `supplies`.

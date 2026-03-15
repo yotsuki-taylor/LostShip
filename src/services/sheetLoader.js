@@ -433,7 +433,6 @@ export async function fetchCrew() {
     const roleCol = findColCrew(headers, ['role', 'должность', 'role']);
     const nameCol = findColCrew(headers, ['name', 'имя', 'name']);
     const hpCol = findColCrew(headers, ['hp', 'здоровье', 'health']);
-    const avatarCol = findColCrew(headers, ['avatar', 'аватар', 'image', 'img', 'фото']);
 
     const crew = [];
     for (const row of rows) {
@@ -441,7 +440,6 @@ export async function fetchCrew() {
       const role = roleCol >= 0 ? (row._values?.[roleCol] ?? row[headers[roleCol]] ?? '').toString().trim() : '—';
       const nameRaw = nameCol >= 0 ? (row._values?.[nameCol] ?? row[headers[nameCol]] ?? '').toString().trim() : '—';
       const hp = hpCol >= 0 ? (row._values?.[hpCol] ?? row[headers[hpCol]] ?? '20').toString().trim() : '20';
-      const avatar = avatarCol >= 0 ? (row._values?.[avatarCol] ?? row[headers[avatarCol]] ?? '').toString().trim() : '';
 
       crew.push({
         id: id || crew.length,
@@ -449,7 +447,6 @@ export async function fetchCrew() {
         nameList: nameRaw,
         hp: parseInt(hp, 10) || 20,
         status: getStatusFromHp(hp),
-        avatar: avatar || null,
       });
     }
     return crew;
