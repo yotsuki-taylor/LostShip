@@ -72,6 +72,19 @@ function parseConsequences(str) {
   }
 }
 
+const RESOURCE_KEYS = ['hull', 'energy', 'scrap', 'crew', 'stability'];
+
+function splitConsequences(obj) {
+  if (!obj || typeof obj !== 'object') return { delta: {}, setVariable: null };
+  const delta = {};
+  const setVariable = {};
+  Object.entries(obj).forEach(([k, v]) => {
+    if (RESOURCE_KEYS.includes(k) && typeof v === 'number') delta[k] = v;
+    else if (PLAYER_VAR_KEYS.includes(k)) setVariable[k] = v;
+  });
+  return { delta, setVariable: Object.keys(setVariable).length ? setVariable : null };
+}
+
 function rowToEvent(row) {
   const choices = [];
   for (let i = 1; i <= 4; i++) {
@@ -81,18 +94,24 @@ function rowToEvent(row) {
     const consequences = getOptConsequences(row, i);
     let choice = {};
     if (consequences?.chance != null && consequences?.success != null && consequences?.failure != null) {
+      const succ = splitConsequences(consequences.success);
+      const fail = splitConsequences(consequences.failure);
       choice = {
         text,
         optReq,
         chance: consequences.chance,
-        success: { hull: 0, energy: 0, scrap: 0, crew: 0, stability: 0, ...consequences.success },
-        failure: { hull: 0, energy: 0, scrap: 0, crew: 0, stability: 0, ...consequences.failure },
+        success: { hull: 0, energy: 0, scrap: 0, crew: 0, stability: 0, ...succ.delta },
+        failure: { hull: 0, energy: 0, scrap: 0, crew: 0, stability: 0, ...fail.delta },
+        successSetVariable: succ.setVariable,
+        failureSetVariable: fail.setVariable,
       };
     } else if (consequences) {
+      const { delta, setVariable } = splitConsequences(consequences);
       choice = {
         text,
         optReq,
-        delta: { hull: 0, energy: 0, scrap: 0, crew: 0, stability: 0, ...consequences },
+        delta: { hull: 0, energy: 0, scrap: 0, crew: 0, stability: 0, ...delta },
+        setVariable,
       };
     } else {
       choice = { text, optReq, delta: {} };
@@ -111,7 +130,7 @@ function rowToEvent(row) {
   };
 }
 
-const PLAYER_VAR_KEYS = ['ship', 'guest', 'dest'];
+const PLAYER_VAR_KEYS = ['ship', 'guest', 'dest', 'demon', 'engine', 'ship_mage'];
 
 function isPlayerVar(obj) {
   if (!obj || typeof obj !== 'object') return false;

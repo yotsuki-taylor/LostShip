@@ -1,13 +1,5 @@
 import React from 'react';
-import { getResourceLabels } from '../utils/resourceHelpers';
-
-const RESOURCE_UNITS = {
-  hull: '%',
-  energy: '%',
-  scrap: '',
-  crew: '',
-  stability: '%',
-};
+import { getResourceLabels, RESOURCE_UNITS } from '../utils/resourceHelpers';
 
 export function ResourcePanel({ resources, limits }) {
   const resourceLabels = getResourceLabels();

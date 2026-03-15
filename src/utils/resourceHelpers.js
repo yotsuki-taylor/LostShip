@@ -4,8 +4,20 @@ const RESOURCE_LABELS = {
   hull: 'Корпус',
   energy: 'Энергия',
   scrap: 'Припасы',
-  crew: 'Экипаж',
+  crew: 'Лояльность команды',
   stability: 'Стабильность',
+};
+
+export const RESOURCE_KEYS = ['hull', 'energy', 'scrap', 'crew', 'stability'];
+
+export const STATUS_VAR_KEYS = ['demon', 'engine', 'ship_mage'];
+
+export const RESOURCE_UNITS = {
+  hull: '%',
+  energy: '%',
+  scrap: '',
+  crew: '%',
+  stability: '%',
 };
 
 /**

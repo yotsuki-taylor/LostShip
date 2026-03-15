@@ -42,6 +42,6 @@ export const RESOURCE_LIMITS = {
   hull: { min: 0, max: 100 },
   energy: { min: 0, max: 100 },
   scrap: { min: 0, max: 999 },
-  crew: { min: 0, max: 50 },
+  crew: { min: 0, max: 100 },
   stability: { min: 0, max: 100 },
 };

@@ -1,9 +1,10 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { ENERGY_REGEN_PER_TURN } from './data/events';
-import { getResourceLimits, getResourceLabels, applyDeltas, applyDifficultyToDeltas } from './utils/resourceHelpers';
+import { getResourceLimits, getResourceLabels, RESOURCE_UNITS, RESOURCE_KEYS, STATUS_VAR_KEYS, applyDeltas, applyDifficultyToDeltas } from './utils/resourceHelpers';
 import { saveGame, loadGame, hasSave, clearSave } from './utils/saveGame';
 import { matchesEventReq } from './services/sheetLoader';
 import { useSheetData } from './hooks/useSheetData';
+import { StatusPanel } from './components/StatusPanel';
 import { ResourcePanel } from './components/ResourcePanel';
 import { EventLog } from './components/EventLog';
 import { EventPopup } from './components/EventPopup';
@@ -15,7 +16,7 @@ const INITIAL_RESOURCES = {
   hull: 80,
   energy: 70,
   scrap: 25,
-  crew: 12,
+  crew: 50,
   stability: 70,
 };
 
@@ -23,6 +24,9 @@ const INITIAL_PLAYER_VARS = {
   ship: null,
   guest: null,
   dest: null,
+  demon: 'сбежал',
+  engine: 'поврежден',
+  ship_mage: 'ранен',
 };
 
 function formatDeltaForLog(delta, extra = {}) {
@@ -32,8 +36,9 @@ function formatDeltaForLog(delta, extra = {}) {
   Object.entries(combined).forEach(([key, val]) => {
     if (val === 0 || val === undefined) return;
     const label = labels[key] ?? key;
+    const unit = RESOURCE_UNITS[key] ?? '';
     const sign = val > 0 ? '+' : '';
-    parts.push(`${label}: ${sign}${val}`);
+    parts.push(`${label}: ${sign}${val}${unit}`);
   });
   return parts.length > 0 ? ` [${parts.join(', ')}]` : '';
 }
@@ -117,16 +122,29 @@ export default function App() {
 
       let delta = choice.delta;
       let riskOutcome = null;
+      let setVariable = choice.setVariable;
       if (choice.chance != null && choice.success != null && choice.failure != null) {
         riskOutcome = Math.random() < choice.chance ? 'success' : 'failure';
         delta = riskOutcome === 'success' ? choice.success : choice.failure;
+        setVariable = riskOutcome === 'success' ? choice.successSetVariable : choice.failureSetVariable;
       }
       delta = delta ?? {};
 
+      const resourceDelta = {};
+      const statusFromDelta = {};
+      Object.entries(delta).forEach(([k, v]) => {
+        if (RESOURCE_KEYS.includes(k) && typeof v === 'number') resourceDelta[k] = v;
+        else if (STATUS_VAR_KEYS.includes(k) && typeof v === 'string') statusFromDelta[k] = v;
+      });
+      setVariable = { ...statusFromDelta, ...setVariable };
+      if (Object.keys(setVariable).length === 0) setVariable = null;
+
       const difficultyMultiplier = stormProgress > 50 ? 1.2 : 1;
-      const finalDelta = applyDifficultyToDeltas(delta, difficultyMultiplier);
+      const finalDelta = applyDifficultyToDeltas(resourceDelta, difficultyMultiplier);
 
       const afterChoice = applyDeltas(resources, finalDelta, limits);
+      const newPlayerVars = setVariable ? { ...playerVars, ...setVariable } : playerVars;
+      if (setVariable) setPlayerVars(newPlayerVars);
       const afterRegen = applyDeltas(afterChoice, { energy: ENERGY_REGEN_PER_TURN }, limits);
       setResources(afterRegen);
 
@@ -156,7 +174,7 @@ export default function App() {
           turn: newTurn,
           eventLog: newEventLog,
           stormProgress: newStormProgress,
-          playerVars,
+          playerVars: newPlayerVars,
         });
       }
     },
@@ -249,7 +267,7 @@ export default function App() {
         <div className="min-h-screen bg-zinc-950 text-zinc-300 font-mono flex flex-col items-center justify-center p-8">
         <h2 className="text-2xl font-bold text-red-500 mb-4">Корабль потерян в пустоте</h2>
         <p className="text-zinc-400 mb-6 text-center">
-          Hull: {resources.hull} | Crew: {resources.crew}
+          Корпус: {resources.hull}% | Лояльность команды: {resources.crew}%
         </p>
         <button
           type="button"
@@ -316,6 +334,7 @@ export default function App() {
       <ShipDisplay />
 
       <div className="mb-4">
+        <StatusPanel playerVars={playerVars} />
         <ResourcePanel resources={resources} limits={limits} />
       </div>
 
