@@ -5,8 +5,7 @@ import { saveGame, loadGame, hasSave, clearSave, migrateResources } from './util
 import { matchesEventReq, pickCrewNames } from './services/sheetLoader';
 import { useSheetData } from './hooks/useSheetData';
 import { DEFAULT_SHIP_STATS } from './services/sheetLoader';
-import { StatusPanel } from './components/StatusPanel';
-import { ResourcePanel } from './components/ResourcePanel';
+import { InfoPanel } from './components/InfoPanel';
 import { EventLog } from './components/EventLog';
 import { EventPopup } from './components/EventPopup';
 import { IntroPopup } from './components/IntroPopup';
@@ -272,10 +271,7 @@ export default function App() {
     return (
       <>
         <audio ref={audioRef} src={MUSIC_PATH} loop preload="auto" />
-        <div className="min-h-screen bg-zinc-950 text-zinc-300 font-mono p-4">
-        <div className="mb-4">
-          <ResourcePanel resources={resources} />
-        </div>
+        <div className="min-h-screen bg-zinc-950">
         <IntroPopup
           slide={introSlides[introStep]}
           onNext={handleIntroNext}
@@ -353,10 +349,7 @@ export default function App() {
 
       <ShipDisplay />
 
-      <div className="mb-4">
-        <StatusPanel playerVars={playerVars} />
-        <ResourcePanel resources={resources} />
-      </div>
+      <InfoPanel playerVars={playerVars} resources={resources} />
 
       <EventPopup
         event={currentEvent}
