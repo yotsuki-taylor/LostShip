@@ -65,15 +65,16 @@ export function useSheetData() {
       ]);
       setSheetData((prev) => {
         const preserved = data ?? (prev?.events?.length ? { intro: prev.intro ?? [], events: prev.events } : null);
+        const mergedCrew = (crew && crew.length > 0) ? crew : (prev?.crew ?? []);
         return preserved
           ? {
               ...preserved,
               shipStats: shipStats ?? prev?.shipStats ?? DEFAULT_SHIP_STATS,
-              crew: crew ?? prev?.crew ?? [],
+              crew: mergedCrew,
             }
           : {
               shipStats: shipStats ?? DEFAULT_SHIP_STATS,
-              crew: crew ?? [],
+              crew: mergedCrew,
             };
       });
       setError(null);

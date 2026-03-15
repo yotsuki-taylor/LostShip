@@ -130,6 +130,7 @@ export default function App() {
   const [showMapPopup, setShowMapPopup] = useState(false);
   const [showCrewPopup, setShowCrewPopup] = useState(false);
   const [gameCrew, setGameCrew] = useState([]);
+  const [pendingCrewInit, setPendingCrewInit] = useState(false);
 
   const limits = useMemo(() => getResourceLimits(), []);
 
@@ -145,6 +146,15 @@ export default function App() {
       setResources(withFixedShipStats(shipStats));
     }
   }, [shipStats, showMenu]);
+
+  // Мобильный сценарий: если новая игра стартовала до загрузки Crew, дозаполняем команду позже.
+  useEffect(() => {
+    if (!pendingCrewInit) return;
+    if (showMenu) return;
+    if (!crew || crew.length === 0) return;
+    setGameCrew(rollInitialCrewDamage(pickCrewNames(crew)));
+    setPendingCrewInit(false);
+  }, [pendingCrewInit, showMenu, crew]);
 
   const isGameOver = (resources.hull ?? 0) <= 0;
   const isVictory = stormProgress >= 100;
@@ -282,7 +292,9 @@ export default function App() {
   const handleNewGame = useCallback(() => {
     clearSave();
     setResources(withFixedShipStats(shipStats ?? DEFAULT_SHIP_STATS));
-    setGameCrew(rollInitialCrewDamage(pickCrewNames(crew)));
+    const preparedCrew = rollInitialCrewDamage(pickCrewNames(crew));
+    setGameCrew(preparedCrew);
+    setPendingCrewInit(preparedCrew.length === 0);
     setTurn(0);
     setEventLog([]);
     setCurrentEvent(null);
@@ -300,6 +312,7 @@ export default function App() {
     if (!saved) return;
     setResources(withFixedShipStats(migrateResources(saved.resources) ?? shipStats ?? DEFAULT_SHIP_STATS));
     setGameCrew(saved.crew ?? []);
+    setPendingCrewInit(false);
     setTurn(saved.turn ?? 0);
     setEventLog((saved.eventLog ?? []).slice(-5));
     setCurrentEvent(null);
@@ -316,6 +329,7 @@ export default function App() {
     if (isVictory) clearSave();
     setResources(withFixedShipStats(shipStats ?? DEFAULT_SHIP_STATS));
     setGameCrew([]);
+    setPendingCrewInit(false);
     setTurn(0);
     setEventLog([]);
     setCurrentEvent(null);
