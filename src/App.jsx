@@ -307,13 +307,8 @@ export default function App() {
     <>
       <audio ref={audioRef} src={MUSIC_PATH} loop preload="auto" />
       <div className="min-h-screen bg-zinc-950 text-zinc-300 font-mono p-4">
-      <header className="mb-4 border-b-2 border-zinc-700 pb-2 flex justify-between items-center">
-        <div>
-          <h1 className="text-xl font-bold text-amber-500/90 tracking-wider">
-            LOST SHIP
-          </h1>
-          <p className="text-xs text-zinc-500">Ход: {turn}</p>
-        </div>
+      <header className="mb-4 flex justify-between items-center">
+        <p className="text-xs text-zinc-500">Ход: {turn}</p>
         {fromSheet && (
           <span className="text-xs text-emerald-500/80">Таблица подключена</span>
         )}
