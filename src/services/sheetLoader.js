@@ -10,11 +10,34 @@ const SHEET_URL = SHEET_BASE;
 const SHIP_STATS_GID = '1262995639';
 /** gid листа Crew/Команда */
 const CREW_GID = '21323879';
+/** gid листа Intro — если интро на отдельной вкладке, укажите здесь */
+const INTRO_GID = '';
 
 const SHIP_STATS_URL = SHIP_STATS_GID ? `${SHEET_BASE}&gid=${SHIP_STATS_GID}` : null;
 const CREW_URL = CREW_GID ? `${SHEET_BASE}&gid=${CREW_GID}` : null;
+const INTRO_URL = INTRO_GID ? `${SHEET_BASE}&gid=${INTRO_GID}` : null;
 
-const SHIP_STATS_HEADERS = ['hull', 'speed', 'energy', 'attack', 'supplies', 'morale'];
+const FETCH_RETRIES = 3;
+const FETCH_RETRY_DELAY_MS = 800;
+
+async function fetchWithRetry(url, opts = {}) {
+  let lastErr;
+  for (let i = 0; i < FETCH_RETRIES; i++) {
+    try {
+      const res = await fetch(url, { mode: 'cors', ...opts });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.text();
+    } catch (e) {
+      lastErr = e;
+      if (i < FETCH_RETRIES - 1) {
+        await new Promise((r) => setTimeout(r, FETCH_RETRY_DELAY_MS));
+      }
+    }
+  }
+  throw lastErr;
+}
+
+const SHIP_STATS_HEADERS = ['hull', 'energy', 'supplies', 'morale'];
 
 /**
  * Парсит CSV с учётом полей в кавычках (Google Sheets экспортирует так).
@@ -76,22 +99,48 @@ function parseCSVLine(line, delimiter) {
 
 function parseConsequences(str) {
   if (!str || str === '{}') return null;
-  try {
-    return JSON.parse(str);
-  } catch {
-    return null;
-  }
+
+  const tryParse = (raw) => {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  };
+
+  const direct = tryParse(str);
+  if (direct) return direct;
+
+  // Поддержка "почти JSON" из таблицы (без кавычек у строк и ключей).
+  const repaired = String(str)
+    .replace(/([A-Za-zА-Яа-яЁё_][A-Za-zА-Яа-яЁё0-9_\-]*)""\s*:/g, '$1:')
+    .replace(/"([^"]+)""\s*:/g, '"$1":')
+    .replace(/([\{,]\s*)([A-Za-zА-Яа-яЁё_][A-Za-zА-Яа-яЁё0-9_\-]*)(\s*:)/g, '$1"$2"$3')
+    .replace(/:\s*([A-Za-zА-Яа-яЁё_][A-Za-zА-Яа-яЁё0-9_\-]*)(\s*(,|\}))/g, ': "$1"$2');
+
+  return tryParse(repaired);
 }
 
-const RESOURCE_KEYS = ['hull', 'energy', 'scrap', 'crew', 'stability'];
+const RESOURCE_KEYS = ['hull', 'speed', 'energy', 'attack', 'supplies', 'morale', 'scrap', 'crew', 'stability'];
+
+function parseNum(val) {
+  if (typeof val === 'number' && !Number.isNaN(val)) return val;
+  if (typeof val === 'string') {
+    const n = parseInt(val, 10);
+    if (!Number.isNaN(n)) return n;
+  }
+  return null;
+}
 
 function splitConsequences(obj) {
   if (!obj || typeof obj !== 'object') return { delta: {}, setVariable: null };
   const delta = {};
   const setVariable = {};
   Object.entries(obj).forEach(([k, v]) => {
-    if (RESOURCE_KEYS.includes(k) && typeof v === 'number') delta[k] = v;
-    else if (PLAYER_VAR_KEYS.includes(k)) setVariable[k] = v;
+    const kLower = String(k).toLowerCase().trim();
+    const numVal = parseNum(v);
+    if (RESOURCE_KEYS.includes(kLower) && numVal !== null) delta[kLower] = numVal;
+    else if (PLAYER_VAR_KEYS.includes(kLower)) setVariable[kLower] = typeof v === 'string' ? v : String(v);
   });
   return { delta, setVariable: Object.keys(setVariable).length ? setVariable : null };
 }
@@ -257,12 +306,25 @@ function getOptReq(row, n) {
 
 /** Ищет колонку opt N consequences */
 function getOptConsequences(row, n) {
-  const variants = [`opt${n}_consequences`, `opt${n} consequences`, `opt ${n} consequences`];
+  const variants = [
+    `opt${n}_consequences`,
+    `opt${n} consequences`,
+    `opt ${n} consequences`,
+    `opt${n}_delta`,
+    `opt${n} delta`,
+    `opt ${n} delta`,
+  ];
   for (const v of variants) {
     const val = getRowValue(row, v);
     if (val) return parseConsequences(val);
   }
-  return parseConsequences(row[`opt${n}_consequences`] || row[`opt${n} consequences`] || '');
+  return parseConsequences(
+    row[`opt${n}_consequences`] ||
+    row[`opt${n} consequences`] ||
+    row[`opt${n}_delta`] ||
+    row[`opt${n} delta`] ||
+    ''
+  );
 }
 
 function rowToIntroSlide(row) {
@@ -273,8 +335,8 @@ function rowToIntroSlide(row) {
     const text = textsByPosition[i - 1] || getOptText(row, i) || getRowValue(row, `opt${i}_text`) || fallbackTexts[i - 1];
     if (!text) break;
     const consequences = getOptConsequences(row, i);
-    const setVariable = consequences && isPlayerVar(consequences) ? consequences : null;
-    choices.push({ text, setVariable });
+    const { delta, setVariable } = consequences ? splitConsequences(consequences) : { delta: {}, setVariable: null };
+    choices.push({ text, setVariable, delta: Object.keys(delta).length ? delta : null });
   }
   return {
     id: getRowValue(row, 'id') || row.id,
@@ -297,23 +359,29 @@ export function matchesEventReq(eventReq, playerVars) {
   });
 }
 
+function parseIntroFromRows(rows) {
+  const getEvent = (r) => (getRowValue(r, 'event') || r.event || '').toLowerCase();
+  const introRows = rows.filter((r) => getEvent(r) === 'intro').sort((a, b) => (getRowValue(a, 'id') || a.id || 0) - (getRowValue(b, 'id') || b.id || 0));
+  return introRows.slice(0, 4).map(rowToIntroSlide);
+}
+
 export async function fetchSheetData() {
   try {
-    const res = await fetch(SHEET_URL, {
-      mode: 'cors',
-      headers: { Accept: 'text/csv' },
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const text = await res.text();
-    const rows = parseCSV(text);
-    if (rows.length === 0) return null;
+    const mainText = await fetchWithRetry(SHEET_URL, { headers: { Accept: 'text/csv' } });
+    const introText = INTRO_URL ? await fetchWithRetry(INTRO_URL, { headers: { Accept: 'text/csv' } }).catch(() => null) : null;
+    const mainRows = parseCSV(mainText);
+    if (mainRows.length === 0) return null;
 
     const getEvent = (r) => (getRowValue(r, 'event') || r.event || '').toLowerCase();
-    const introRows = rows.filter((r) => getEvent(r) === 'intro').sort((a, b) => (getRowValue(a, 'id') || a.id || 0) - (getRowValue(b, 'id') || b.id || 0));
-    const randomRows = rows.filter((r) => getEvent(r) === 'random');
+    const randomRows = mainRows.filter((r) => getEvent(r) === 'random');
+    let intro = parseIntroFromRows(mainRows);
+    if (intro.length === 0 && introText) {
+      const introRows = parseCSV(introText);
+      intro = parseIntroFromRows(introRows);
+    }
 
     return {
-      intro: introRows.slice(0, 4).map(rowToIntroSlide),
+      intro,
       events: randomRows.map(rowToEvent),
     };
   } catch (e) {
@@ -324,12 +392,12 @@ export async function fetchSheetData() {
 
 /** Дефолтные статы корабля, если таблица ShipStats недоступна */
 export const DEFAULT_SHIP_STATS = {
-  hull: 80,
-  speed: 1,
-  energy: 70,
-  attack: 1,
-  supplies: 25,
-  morale: 50,
+  hull: 30,
+  speed: 3,
+  energy: 10,
+  attack: 2,
+  supplies: 20,
+  morale: 2,
 };
 
 function findCol(headers, names) {
@@ -344,12 +412,7 @@ function findCol(headers, names) {
 export async function fetchShipStats(shipType = null) {
   if (!SHIP_STATS_URL) return DEFAULT_SHIP_STATS;
   try {
-    const res = await fetch(SHIP_STATS_URL, {
-      mode: 'cors',
-      headers: { Accept: 'text/csv' },
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const text = await res.text();
+    const text = await fetchWithRetry(SHIP_STATS_URL, { headers: { Accept: 'text/csv' } });
     const rows = parseCSV(text);
     if (rows.length < 2) return DEFAULT_SHIP_STATS;
 
@@ -363,7 +426,7 @@ export async function fetchShipStats(shipType = null) {
     }
 
     const stats = { ...DEFAULT_SHIP_STATS };
-    const keyAliases = { health: 'hull', прочность: 'hull', скорость: 'speed', энергия: 'energy', атака: 'attack', припасы: 'supplies', мораль: 'morale' };
+    const keyAliases = { health: 'hull', прочность: 'hull', энергия: 'energy', припасы: 'supplies', мораль: 'morale' };
 
     for (const row of rows) {
       const keyRaw = (row._values?.[statsCol] ?? row[headers[statsCol]] ?? '').toString().trim().toLowerCase();
@@ -419,12 +482,7 @@ function getStatusFromHp(hp) {
 export async function fetchCrew() {
   if (!CREW_URL) return [];
   try {
-    const res = await fetch(CREW_URL, {
-      mode: 'cors',
-      headers: { Accept: 'text/csv' },
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const text = await res.text();
+    const text = await fetchWithRetry(CREW_URL, { headers: { Accept: 'text/csv' } });
     const rows = parseCSV(text);
     if (rows.length < 2) return [];
 

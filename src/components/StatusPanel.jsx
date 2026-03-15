@@ -3,7 +3,6 @@ import React from 'react';
 const STATUS_ITEMS = [
   { key: 'demon', label: 'Демон' },
   { key: 'engine', label: 'Двигатель' },
-  { key: 'ship_mage', label: 'Корабельный маг' },
 ];
 
 const VALUE_COLORS = {
@@ -26,12 +25,6 @@ export function StatusPanel({ playerVars }) {
         [ СТАТУСЫ ]
       </div>
       <table className="w-full text-left text-sm">
-        <thead>
-          <tr className="text-zinc-500">
-            <th className="font-normal">Параметр</th>
-            <th className="font-normal text-right">Значение</th>
-          </tr>
-        </thead>
         <tbody>
           {STATUS_ITEMS.map(({ key, label }) => {
             const value = playerVars?.[key] || '—';

@@ -27,7 +27,10 @@
 - **guest**: `scientist` | `warrior`
 - **dest**: `lighthouse` | `market` | `demon` (поиски демона)
 
-В `opt1_consequences` укажите JSON: `{"ship": "merchant"}` и т.п.
+В `opt1_consequences` укажите JSON: `{"ship": "merchant"}` и т.п. Можно комбинировать с изменением параметров корабля: `{"ship": "merchant", "supplies": 5}`. Ключи параметров: `hull`, `energy`, `supplies`, `morale` (регистр не важен).  
+`speed` и `attack` игнорируются (они фиксированы: скорость = 3, атака = 2d6).
+
+Если интро на отдельной вкладке, укажите `INTRO_GID` в `sheetLoader.js`.
 
 ## Статусы (event_req, opt_req, opt_consequences)
 
@@ -51,13 +54,11 @@
 | stats | value |
 |-------|-------|
 | hull | 80 |
-| speed | 1 |
 | energy | 70 |
-| attack | 1 |
 | supplies | 25 |
 | morale | 50 |
 
-Поддерживаются русские названия: прочность→hull, скорость→speed, энергия→energy, атака→attack, припасы→supplies, мораль→morale.
+Поддерживаются русские названия: прочность→hull, энергия→energy, припасы→supplies, мораль→morale.
 
 ## Вкладка Crew (Команда), gid=21323879
 

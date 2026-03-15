@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { ENERGY_REGEN_PER_TURN } from './data/events';
-import { getResourceLimits, getResourceLabels, RESOURCE_UNITS, DELTA_KEYS, STATUS_VAR_KEYS, applyDeltas, applyDifficultyToDeltas, normalizeDeltaToNewFormat } from './utils/resourceHelpers';
+import { getResourceLimits, getResourceLabels, RESOURCE_UNITS, DELTA_KEYS, STATUS_VAR_KEYS, applyDeltas, applyDifficultyToDeltas, normalizeDeltaToNewFormat, FIXED_SPEED, FIXED_ATTACK } from './utils/resourceHelpers';
 import { saveGame, loadGame, hasSave, clearSave, migrateResources } from './utils/saveGame';
 import { matchesEventReq, pickCrewNames } from './services/sheetLoader';
 import { useSheetData } from './hooks/useSheetData';
@@ -41,6 +41,10 @@ function formatDeltaForLog(delta, extra = {}) {
 
 const MUSIC_PATH = '/LostShip/sound/maintheme.mp3';
 
+function withFixedShipStats(resources) {
+  return { ...resources, speed: FIXED_SPEED, attack: FIXED_ATTACK };
+}
+
 export default function App() {
   const { events, introSlides, shipStats, crew, fromSheet } = useSheetData();
   const audioRef = useRef(null);
@@ -70,7 +74,7 @@ export default function App() {
   // Синхронизация ресурсов со статами из таблицы при загрузке (для меню и новой игры)
   useEffect(() => {
     if (shipStats && showMenu) {
-      setResources(shipStats);
+      setResources(withFixedShipStats(shipStats));
     }
   }, [shipStats, showMenu]);
 
@@ -155,12 +159,12 @@ export default function App() {
       const afterRegen = applyDeltas(afterChoice, { energy: ENERGY_REGEN_PER_TURN }, limits);
       setResources(afterRegen);
 
-      const stormGain = 2 + Math.floor(Math.random() * 4) + (resources.speed ?? 0);
+      const stormGain = FIXED_SPEED;
       setStormProgress((p) => Math.min(100, p + stormGain));
 
       const riskSuffix = riskOutcome ? ` (${riskOutcome === 'success' ? 'успех' : 'провал'})` : '';
       const deltaStr = formatDeltaForLog(finalDelta, { energy: ENERGY_REGEN_PER_TURN });
-      const stormStr = stormGain > 0 ? ` | Буря: +${stormGain}%` : '';
+      const stormStr = stormGain > 0 ? ` | Путь: +${stormGain}%` : '';
       setEventLog((prev) => [
         ...prev.slice(-5),
         `Ход ${turn + 1}: ${currentEvent.title} → "${choice.text}"${riskSuffix}${deltaStr}${stormStr}`,
@@ -189,16 +193,23 @@ export default function App() {
     [currentEvent, isProcessing, limits, resources, stormProgress, turn, eventLog, playerVars, gameCrew]
   );
 
-  const handleIntroNext = useCallback((choice) => {
-    if (choice?.setVariable) {
-      setPlayerVars((prev) => ({ ...prev, ...choice.setVariable }));
-    }
-    setIntroStep((s) => s + 1);
-  }, []);
+  const handleIntroNext = useCallback(
+    (choice) => {
+      if (choice?.setVariable) {
+        setPlayerVars((prev) => ({ ...prev, ...choice.setVariable }));
+      }
+      if (choice?.delta && typeof choice.delta === 'object' && Object.keys(choice.delta).length > 0) {
+        setResources((prev) => applyDeltas(prev, choice.delta, limits));
+      }
+      const nextStep = introStep + 1;
+      setIntroStep(nextStep);
+    },
+    [limits, introStep]
+  );
 
   const handleNewGame = useCallback(() => {
     clearSave();
-    setResources(shipStats ?? DEFAULT_SHIP_STATS);
+    setResources(withFixedShipStats(shipStats ?? DEFAULT_SHIP_STATS));
     setGameCrew(pickCrewNames(crew));
     setTurn(0);
     setEventLog([]);
@@ -215,7 +226,7 @@ export default function App() {
   const handleContinue = useCallback(() => {
     const saved = loadGame();
     if (!saved) return;
-    setResources(migrateResources(saved.resources) ?? shipStats ?? DEFAULT_SHIP_STATS);
+    setResources(withFixedShipStats(migrateResources(saved.resources) ?? shipStats ?? DEFAULT_SHIP_STATS));
     setGameCrew(saved.crew ?? []);
     setTurn(saved.turn ?? 0);
     setEventLog((saved.eventLog ?? []).slice(-5));
@@ -231,7 +242,7 @@ export default function App() {
 
   const handleRestart = useCallback(() => {
     if (isVictory) clearSave();
-    setResources(shipStats ?? DEFAULT_SHIP_STATS);
+    setResources(withFixedShipStats(shipStats ?? DEFAULT_SHIP_STATS));
     setGameCrew([]);
     setTurn(0);
     setEventLog([]);
@@ -261,7 +272,10 @@ export default function App() {
     return (
       <>
         <audio ref={audioRef} src={MUSIC_PATH} loop preload="auto" />
-        <div className="min-h-screen bg-zinc-950">
+        <div className="min-h-screen bg-zinc-950 text-zinc-300 font-mono p-4">
+        <div className="mb-4">
+          <ResourcePanel resources={resources} />
+        </div>
         <IntroPopup
           slide={introSlides[introStep]}
           onNext={handleIntroNext}

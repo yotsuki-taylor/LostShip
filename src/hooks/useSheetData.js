@@ -24,30 +24,30 @@ const DEFAULT_INTRO_SLIDES = [
     title: 'Тип корабля',
     text: 'Какой корабль ведёте вы через бурю?',
     choices: [
-      { text: 'Торговец', setVariable: { ship: 'merchant' } },
-      { text: 'Эсминец', setVariable: { ship: 'destroyer' } },
+      { text: 'Торговец', setVariable: { ship: 'merchant' }, delta: { speed: 1, supplies: 5 } },
+      { text: 'Эсминец', setVariable: { ship: 'destroyer' }, delta: { speed: 2, attack: 1 } },
     ],
   },
   {
     title: 'Попутчик',
     text: 'Кто сопровождает вас в этом рейсе?',
     choices: [
-      { text: 'Учёный', setVariable: { guest: 'scientist' } },
-      { text: 'Воин', setVariable: { guest: 'warrior' } },
+      { text: 'Учёный', setVariable: { guest: 'scientist' }, delta: { energy: 5 } },
+      { text: 'Воин', setVariable: { guest: 'warrior' }, delta: { attack: 1 } },
     ],
   },
   {
     title: 'Цель',
     text: 'Куда держите курс?',
     choices: [
-      { text: 'Маяк', setVariable: { dest: 'lighthouse' } },
-      { text: 'Рынок', setVariable: { dest: 'market' } },
+      { text: 'Маяк', setVariable: { dest: 'lighthouse' }, delta: { supplies: 3 } },
+      { text: 'Рынок', setVariable: { dest: 'market' }, delta: { supplies: 5 } },
     ],
   },
   {
     title: 'В путь',
     text: 'Буря ждёт. Удачи, капитан.',
-    choices: [{ text: 'Выходить', setVariable: null }],
+    choices: [{ text: 'Выходить', setVariable: null, delta: null }],
   },
 ];
 
@@ -77,8 +77,12 @@ export function useSheetData() {
 
   useEffect(() => {
     load();
+    const retryId = setTimeout(load, 2500);
     const id = setInterval(load, REFRESH_INTERVAL_MS);
-    return () => clearInterval(id);
+    return () => {
+      clearTimeout(retryId);
+      clearInterval(id);
+    };
   }, [load]);
 
   const localEvents = normalizeEvents(eventsJson);
@@ -101,7 +105,7 @@ export function useSheetData() {
       .map((c) => {
         const text = (c.text || '').trim();
         const setVariable = c.setVariable ?? inferSetVariableFromText(text);
-        return { text, setVariable };
+        return { text, setVariable, delta: c.delta ?? null };
       }),
   }));
 
@@ -111,9 +115,9 @@ export function useSheetData() {
     sheetIntro.length > 0 && hasValidChoices
       ? sheetIntro
       : sheetIntro.length > 0
-        ? sheetIntro.map((s, i) => ({
+        ? sheetIntro        .map((s, i) => ({
             ...s,
-            choices: (DEFAULT_INTRO_SLIDES[i]?.choices || DEFAULT_INTRO_SLIDES[0]?.choices || [{ text: 'Продолжить', setVariable: null }]),
+            choices: (DEFAULT_INTRO_SLIDES[i]?.choices || DEFAULT_INTRO_SLIDES[0]?.choices || [{ text: 'Продолжить', setVariable: null, delta: null }]).map((c) => ({ ...c, delta: c.delta ?? null })),
           }))
         : DEFAULT_INTRO_SLIDES;
 

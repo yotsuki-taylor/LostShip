@@ -1,5 +1,8 @@
 import { RESOURCE_LIMITS } from '../data/events';
 
+export const FIXED_SPEED = 3;
+export const FIXED_ATTACK = 2;
+
 const RESOURCE_LABELS = {
   hull: 'Прочность',
   speed: 'Скорость',
@@ -18,6 +21,7 @@ const OLD_TO_NEW = {
 };
 
 export const RESOURCE_KEYS = ['hull', 'speed', 'energy', 'attack', 'supplies', 'morale'];
+export const RESOURCE_UI_KEYS = ['hull', 'energy', 'supplies', 'morale'];
 
 /** Ключи для проверки дельт из событий (включая старый формат таблицы) */
 export const DELTA_KEYS = [...RESOURCE_KEYS, ...Object.keys(OLD_TO_NEW)];
@@ -83,6 +87,7 @@ export function normalizeDeltaToNewFormat(deltas) {
   Object.entries(deltas).forEach(([key, val]) => {
     if (typeof val !== 'number') return;
     const newKey = OLD_TO_NEW[key] ?? key;
+    if (newKey === 'speed' || newKey === 'attack') return;
     if (RESOURCE_KEYS.includes(newKey)) {
       result[newKey] = (result[newKey] ?? 0) + val;
     }
@@ -106,5 +111,7 @@ export function applyDeltas(resources, deltas, limits) {
       );
     }
   });
+  next.speed = FIXED_SPEED;
+  next.attack = FIXED_ATTACK;
   return next;
 }
