@@ -4,10 +4,10 @@ export function saveGame(state) {
   try {
     const data = {
       resources: state.resources,
-      moduleLevels: state.moduleLevels,
       turn: state.turn,
       eventLog: state.eventLog,
       stormProgress: state.stormProgress,
+      playerVars: state.playerVars ?? {},
     };
     localStorage.setItem(SAVE_KEY, JSON.stringify(data));
     return true;

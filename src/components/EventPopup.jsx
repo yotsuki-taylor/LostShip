@@ -1,10 +1,18 @@
 import React from 'react';
+import { matchesEventReq } from '../services/sheetLoader';
 
 /**
  * Модальное окно для событий — перекрывает экран, невозможно пропустить.
+ * Фильтрует варианты по optReq (если задан).
  */
-export function EventPopup({ event, onChoice, disabled }) {
+export function EventPopup({ event, onChoice, disabled, playerVars = {} }) {
   if (!event) return null;
+
+  const visibleChoices = (event.choices || [])
+    .map((c, i) => ({ ...c, _idx: i }))
+    .filter((c) => !c.optReq || matchesEventReq(c.optReq, playerVars));
+
+  const choicesToShow = visibleChoices.length > 0 ? visibleChoices : [{ text: 'Продолжить', _idx: -1, delta: {} }];
 
   return (
     <div
@@ -22,12 +30,12 @@ export function EventPopup({ event, onChoice, disabled }) {
         </h2>
         <p className="text-zinc-300 mb-6 leading-relaxed">{event.description}</p>
         <div className="space-y-3">
-          {event.choices.map((choice, idx) => (
+          {choicesToShow.map((choice, idx) => (
             <button
               key={idx}
               type="button"
               disabled={disabled}
-              onClick={() => onChoice(idx)}
+              onClick={() => onChoice(choice)}
               className="block w-full text-left px-4 py-3 rounded border-2 border-zinc-600 bg-zinc-800/90 font-mono hover:border-amber-500 hover:bg-zinc-700/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               <span className="text-zinc-500 select-none">[{idx + 1}] </span>

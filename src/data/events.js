@@ -5,7 +5,7 @@ import eventsJson from './events.json';
  * JSON: { id, title, text, options: [{ text, consequences? | chance, success, failure }] }
  * App:  { id, title, description, choices: [{ text, delta? | chance, success, failure }] }
  */
-function normalizeEvents(raw) {
+export function normalizeEvents(raw) {
   return raw.map((e) => ({
     id: e.id,
     title: e.title,

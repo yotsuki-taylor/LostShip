@@ -1,12 +1,5 @@
 import React from 'react';
-
-const RESOURCE_LABELS = {
-  hull: 'Корпус',
-  energy: 'Энергия',
-  scrap: 'Лом',
-  crew: 'Экипаж',
-  stability: 'Стабильность',
-};
+import { getResourceLabels } from '../utils/resourceHelpers';
 
 const RESOURCE_UNITS = {
   hull: '%',
@@ -17,6 +10,7 @@ const RESOURCE_UNITS = {
 };
 
 export function ResourcePanel({ resources, limits }) {
+  const resourceLabels = getResourceLabels();
   return (
     <div className="terminal-panel p-3 font-mono">
       <div className="text-emerald-500/90 text-sm font-semibold mb-2 border-b border-zinc-600 pb-1">
@@ -33,7 +27,7 @@ export function ResourcePanel({ resources, limits }) {
         <tbody>
           {Object.entries(resources).map(([key, value]) => (
             <tr key={key} className="border-t border-zinc-700/50">
-              <td className="py-0.5">{RESOURCE_LABELS[key] ?? key}</td>
+              <td className="py-0.5">{resourceLabels[key] ?? key}</td>
               <td className="text-right tabular-nums">
                 {value}
                 {RESOURCE_UNITS[key] ?? ''}

@@ -1,16 +1,15 @@
-import React, { useState, useCallback, useMemo } from 'react';
-import { events, ENERGY_REGEN_PER_TURN } from './data/events';
-import { INTRO_SLIDES } from './data/intro';
-import { SHIP_MODULES } from './data/modules';
-import { getResourceLimits, applyDeltas, applyDifficultyToDeltas } from './utils/resourceHelpers';
+import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import { ENERGY_REGEN_PER_TURN } from './data/events';
+import { getResourceLimits, getResourceLabels, applyDeltas, applyDifficultyToDeltas } from './utils/resourceHelpers';
 import { saveGame, loadGame, hasSave, clearSave } from './utils/saveGame';
+import { matchesEventReq } from './services/sheetLoader';
+import { useSheetData } from './hooks/useSheetData';
 import { ResourcePanel } from './components/ResourcePanel';
 import { EventLog } from './components/EventLog';
 import { EventPopup } from './components/EventPopup';
 import { IntroPopup } from './components/IntroPopup';
 import { StartMenu } from './components/StartMenu';
 import { ShipDisplay } from './components/ShipDisplay';
-import { ShipModules } from './components/ShipModules';
 
 const INITIAL_RESOURCES = {
   hull: 80,
@@ -20,42 +19,33 @@ const INITIAL_RESOURCES = {
   stability: 70,
 };
 
-const INITIAL_MODULE_LEVELS = {
-  hull_plating: 0,
-  capacitor: 0,
-  scrap_hold: 0,
-  quarters: 0,
-  gyro: 0,
+const INITIAL_PLAYER_VARS = {
+  ship: null,
+  guest: null,
+  dest: null,
 };
-
-const RESOURCE_LABELS = {
-  hull: 'Корпус',
-  energy: 'Энергия',
-  scrap: 'Лом',
-  crew: 'Экипаж',
-  stability: 'Стабильность',
-};
-
-function pickRandomEvent() {
-  return events[Math.floor(Math.random() * events.length)];
-}
 
 function formatDeltaForLog(delta, extra = {}) {
   const combined = { ...delta, ...extra };
+  const labels = getResourceLabels();
   const parts = [];
   Object.entries(combined).forEach(([key, val]) => {
     if (val === 0 || val === undefined) return;
-    const label = RESOURCE_LABELS[key] ?? key;
+    const label = labels[key] ?? key;
     const sign = val > 0 ? '+' : '';
     parts.push(`${label}: ${sign}${val}`);
   });
   return parts.length > 0 ? ` [${parts.join(', ')}]` : '';
 }
 
+const MUSIC_PATH = '/LostShip/sound/maintheme.mp3';
+
 export default function App() {
+  const { events, introSlides, fromSheet } = useSheetData();
+  const audioRef = useRef(null);
+
   const [showMenu, setShowMenu] = useState(true);
   const [resources, setResources] = useState(INITIAL_RESOURCES);
-  const [moduleLevels, setModuleLevels] = useState(INITIAL_MODULE_LEVELS);
   const [turn, setTurn] = useState(0);
   const [eventLog, setEventLog] = useState([]);
   const [currentEvent, setCurrentEvent] = useState(null);
@@ -63,11 +53,24 @@ export default function App() {
   const [stormProgress, setStormProgress] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [introStep, setIntroStep] = useState(0);
+  const [playerVars, setPlayerVars] = useState(INITIAL_PLAYER_VARS);
 
-  const limits = useMemo(() => getResourceLimits(moduleLevels), [moduleLevels]);
+  const limits = useMemo(() => getResourceLimits(), []);
+
+  useEffect(() => {
+    if (!showMenu && audioRef.current) {
+      audioRef.current.play().catch(() => {});
+    }
+  }, [showMenu]);
 
   const isGameOver = resources.hull <= 0 || resources.crew <= 0;
   const isVictory = stormProgress >= 100;
+
+  const pickRandomEvent = useCallback(() => {
+    const eligible = events.filter((e) => matchesEventReq(e.event_req, playerVars));
+    const pool = eligible.length > 0 ? eligible : events;
+    return pool[Math.floor(Math.random() * pool.length)];
+  }, [events, playerVars]);
 
   const handleWait = useCallback(() => {
     if (isEventActive || isGameOver || isVictory) return;
@@ -76,10 +79,7 @@ export default function App() {
     const isFirstClick = turn === 0;
     const gotEvent = isFirstClick || roll < 0.7;
 
-    // Пассивная регенерация энергии +2
-    setResources((prev) =>
-      applyDeltas(prev, { energy: 2 }, limits)
-    );
+    setResources((prev) => applyDeltas(prev, { energy: 2 }, limits));
     setTurn((t) => t + 1);
 
     if (gotEvent && events.length > 0) {
@@ -97,23 +97,24 @@ export default function App() {
       const newResources = applyDeltas(resources, { energy: 2 }, limits);
       saveGame({
         resources: newResources,
-        moduleLevels,
         turn: turn + 1,
         eventLog: newLog,
         stormProgress,
+        playerVars,
       });
     }
-  }, [isEventActive, isGameOver, isVictory, limits, turn, resources, eventLog, moduleLevels, stormProgress]);
+  }, [isEventActive, isGameOver, isVictory, limits, turn, resources, eventLog, stormProgress, playerVars, events, pickRandomEvent]);
 
   const handleChoice = useCallback(
-    (choiceIndex) => {
+    (choiceOrIndex) => {
       if (!currentEvent || isProcessing) return;
-      const choice = currentEvent.choices[choiceIndex];
+      const choice = typeof choiceOrIndex === 'number'
+        ? currentEvent.choices[choiceOrIndex]
+        : choiceOrIndex;
       if (!choice) return;
 
       setIsProcessing(true);
 
-      // Определяем дельту: обычный выбор или риск (chance/success/failure)
       let delta = choice.delta;
       let riskOutcome = null;
       if (choice.chance != null && choice.success != null && choice.failure != null) {
@@ -122,20 +123,13 @@ export default function App() {
       }
       delta = delta ?? {};
 
-      // Множитель сложности: при stormProgress > 50 урон +20%
       const difficultyMultiplier = stormProgress > 50 ? 1.2 : 1;
       const finalDelta = applyDifficultyToDeltas(delta, difficultyMultiplier);
 
-      // Применяем последствия и регенерацию энергии
       const afterChoice = applyDeltas(resources, finalDelta, limits);
-      const afterRegen = applyDeltas(
-        afterChoice,
-        { energy: ENERGY_REGEN_PER_TURN },
-        limits
-      );
+      const afterRegen = applyDeltas(afterChoice, { energy: ENERGY_REGEN_PER_TURN }, limits);
       setResources(afterRegen);
 
-      // Прогресс бури: +2..5
       const stormGain = 2 + Math.floor(Math.random() * 4);
       setStormProgress((p) => Math.min(100, p + stormGain));
 
@@ -152,7 +146,6 @@ export default function App() {
       setIsEventActive(false);
       setIsProcessing(false);
 
-      // Сохранение прогресса (только если игра не закончена)
       const isDead = afterRegen.hull <= 0 || afterRegen.crew <= 0;
       if (!isDead) {
         const newTurn = turn + 1;
@@ -160,44 +153,26 @@ export default function App() {
         const newEventLog = [...eventLog, `Ход ${newTurn}: ${currentEvent.title} → "${choice.text}"${riskSuffix}${deltaStr}${stormStr}`];
         saveGame({
           resources: afterRegen,
-          moduleLevels,
           turn: newTurn,
           eventLog: newEventLog,
           stormProgress: newStormProgress,
+          playerVars,
         });
       }
     },
-    [currentEvent, isProcessing, limits, resources, stormProgress, turn, eventLog, moduleLevels]
+    [currentEvent, isProcessing, limits, resources, stormProgress, turn, eventLog, playerVars]
   );
 
-  const handleUpgrade = useCallback(
-    (moduleId) => {
-      const mod = SHIP_MODULES.find((m) => m.id === moduleId);
-      if (!mod) return;
-      const level = moduleLevels[moduleId] ?? 0;
-      if (level >= mod.maxLevel || resources.scrap < mod.cost) return;
-      const newModuleLevels = { ...moduleLevels, [moduleId]: level + 1 };
-      const newResources = { ...resources, scrap: resources.scrap - mod.cost };
-      const upgradeDelta = formatDeltaForLog({ scrap: -mod.cost });
-      const newEventLog = [...eventLog.slice(-49), `Улучшение: ${mod.name} до уровня ${level + 1}.${upgradeDelta}`];
-      setModuleLevels(newModuleLevels);
-      setResources(newResources);
-      setEventLog(newEventLog);
-      saveGame({
-        resources: newResources,
-        moduleLevels: newModuleLevels,
-        turn,
-        eventLog: newEventLog,
-        stormProgress,
-      });
-    },
-    [moduleLevels, resources, eventLog, stormProgress, turn]
-  );
+  const handleIntroNext = useCallback((choice) => {
+    if (choice?.setVariable) {
+      setPlayerVars((prev) => ({ ...prev, ...choice.setVariable }));
+    }
+    setIntroStep((s) => s + 1);
+  }, []);
 
   const handleNewGame = useCallback(() => {
     clearSave();
     setResources(INITIAL_RESOURCES);
-    setModuleLevels(INITIAL_MODULE_LEVELS);
     setTurn(0);
     setEventLog([]);
     setCurrentEvent(null);
@@ -205,28 +180,30 @@ export default function App() {
     setStormProgress(0);
     setIsProcessing(false);
     setIntroStep(0);
+    setPlayerVars(INITIAL_PLAYER_VARS);
     setShowMenu(false);
+    audioRef.current?.play().catch(() => {});
   }, []);
 
   const handleContinue = useCallback(() => {
     const saved = loadGame();
     if (!saved) return;
     setResources(saved.resources ?? INITIAL_RESOURCES);
-    setModuleLevels(saved.moduleLevels ?? INITIAL_MODULE_LEVELS);
     setTurn(saved.turn ?? 0);
     setEventLog(saved.eventLog ?? []);
     setCurrentEvent(null);
     setIsEventActive(false);
     setStormProgress(saved.stormProgress ?? 0);
     setIsProcessing(false);
-    setIntroStep(INTRO_SLIDES.length); // Пропустить интро
+    setPlayerVars(saved.playerVars ?? INITIAL_PLAYER_VARS);
+    setIntroStep(introSlides.length);
     setShowMenu(false);
-  }, []);
+    audioRef.current?.play().catch(() => {});
+  }, [introSlides.length]);
 
   const handleRestart = useCallback(() => {
     if (isVictory) clearSave();
     setResources(INITIAL_RESOURCES);
-    setModuleLevels(INITIAL_MODULE_LEVELS);
     setTurn(0);
     setEventLog([]);
     setCurrentEvent(null);
@@ -234,36 +211,42 @@ export default function App() {
     setStormProgress(0);
     setIsProcessing(false);
     setIntroStep(0);
+    setPlayerVars(INITIAL_PLAYER_VARS);
     setShowMenu(true);
   }, [isVictory]);
 
-  // Стартовое меню
   if (showMenu) {
     return (
-      <StartMenu
+      <>
+        <audio ref={audioRef} src={MUSIC_PATH} loop preload="auto" />
+        <StartMenu
         onNewGame={handleNewGame}
         onContinue={handleContinue}
         hasSave={hasSave()}
       />
+      </>
     );
   }
 
-  // Интро — три слайда перед началом игры
-  if (introStep < INTRO_SLIDES.length) {
+  if (introStep < introSlides.length) {
     return (
-      <div className="min-h-screen bg-zinc-950">
+      <>
+        <audio ref={audioRef} src={MUSIC_PATH} loop preload="auto" />
+        <div className="min-h-screen bg-zinc-950">
         <IntroPopup
-          slide={INTRO_SLIDES[introStep]}
-          onNext={() => setIntroStep((s) => s + 1)}
+          slide={introSlides[introStep]}
+          onNext={handleIntroNext}
         />
       </div>
+      </>
     );
   }
 
-  // Экран поражения
   if (isGameOver) {
     return (
-      <div className="min-h-screen bg-zinc-950 text-zinc-300 font-mono flex flex-col items-center justify-center p-8">
+      <>
+        <audio ref={audioRef} src={MUSIC_PATH} loop preload="auto" />
+        <div className="min-h-screen bg-zinc-950 text-zinc-300 font-mono flex flex-col items-center justify-center p-8">
         <h2 className="text-2xl font-bold text-red-500 mb-4">Корабль потерян в пустоте</h2>
         <p className="text-zinc-400 mb-6 text-center">
           Hull: {resources.hull} | Crew: {resources.crew}
@@ -276,13 +259,15 @@ export default function App() {
           НАЧАТЬ ЗАНОВО
         </button>
       </div>
+      </>
     );
   }
 
-  // Экран победы
   if (isVictory) {
     return (
-      <div className="min-h-screen bg-zinc-950 text-zinc-300 font-mono flex flex-col items-center justify-center p-8">
+      <>
+        <audio ref={audioRef} src={MUSIC_PATH} loop preload="auto" />
+        <div className="min-h-screen bg-zinc-950 text-zinc-300 font-mono flex flex-col items-center justify-center p-8">
         <h2 className="text-2xl font-bold text-emerald-500 mb-4">Победа!</h2>
         <p className="text-zinc-400 mb-6 text-center">
           Пространственное ядро стабилизировано. Вы вышли из бури за {turn} ходов.
@@ -295,22 +280,29 @@ export default function App() {
           ИГРАТЬ СНОВА
         </button>
       </div>
+      </>
     );
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-300 font-mono p-4">
-      <header className="mb-4 border-b-2 border-zinc-700 pb-2">
-        <h1 className="text-xl font-bold text-amber-500/90 tracking-wider">
-          LOST SHIP
-        </h1>
-        <p className="text-xs text-zinc-500">Ход: {turn}</p>
+    <>
+      <audio ref={audioRef} src={MUSIC_PATH} loop preload="auto" />
+      <div className="min-h-screen bg-zinc-950 text-zinc-300 font-mono p-4">
+      <header className="mb-4 border-b-2 border-zinc-700 pb-2 flex justify-between items-center">
+        <div>
+          <h1 className="text-xl font-bold text-amber-500/90 tracking-wider">
+            LOST SHIP
+          </h1>
+          <p className="text-xs text-zinc-500">Ход: {turn}</p>
+        </div>
+        {fromSheet && (
+          <span className="text-xs text-emerald-500/80">Таблица подключена</span>
+        )}
       </header>
 
-      {/* Прогресс бури */}
       <div className="mb-4 terminal-panel p-3">
         <div className="text-cyan-500/90 text-sm font-semibold mb-2">
-          Стабильность пространственного ядра
+          Курс на {playerVars.dest === 'market' ? 'Мир-Рынок' : playerVars.dest === 'lighthouse' ? 'Планарный Маяк' : '—'}
         </div>
         <div className="h-4 bg-zinc-800 rounded overflow-hidden border border-zinc-600">
           <div
@@ -321,15 +313,12 @@ export default function App() {
         <p className="text-xs text-zinc-500 mt-1 tabular-nums">{stormProgress}%</p>
       </div>
 
-      {/* Корабль в космосе */}
       <ShipDisplay />
 
-      {/* Верхняя панель ресурсов */}
       <div className="mb-4">
         <ResourcePanel resources={resources} limits={limits} />
       </div>
 
-      {/* Кнопка ЖДАТЬ */}
       <div className="mb-4 flex justify-center">
         <button
           type="button"
@@ -341,25 +330,15 @@ export default function App() {
         </button>
       </div>
 
-      {/* Попап события — перекрывает экран, когда есть активное событие */}
       <EventPopup
         event={currentEvent}
         onChoice={handleChoice}
         disabled={isProcessing}
+        playerVars={playerVars}
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2">
-          <EventLog entries={eventLog} />
-        </div>
-        <div>
-          <ShipModules
-            moduleLevels={moduleLevels}
-            scrap={resources.scrap}
-            onUpgrade={handleUpgrade}
-          />
-        </div>
-      </div>
+      <EventLog entries={eventLog} />
     </div>
+    </>
   );
 }

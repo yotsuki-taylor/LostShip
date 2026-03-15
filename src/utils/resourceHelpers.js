@@ -1,19 +1,27 @@
 import { RESOURCE_LIMITS } from '../data/events';
-import { SHIP_MODULES } from '../data/modules';
+
+const RESOURCE_LABELS = {
+  hull: 'Корпус',
+  energy: 'Энергия',
+  scrap: 'Припасы',
+  crew: 'Экипаж',
+  stability: 'Стабильность',
+};
 
 /**
- * Вычисляет текущие лимиты ресурсов с учётом уровней модулей.
+ * Возвращает подписи ресурсов.
  */
-export function getResourceLimits(moduleLevels) {
+export function getResourceLabels() {
+  return { ...RESOURCE_LABELS };
+}
+
+/**
+ * Возвращает лимиты ресурсов.
+ */
+export function getResourceLimits() {
   const limits = {};
   Object.keys(RESOURCE_LIMITS).forEach((key) => {
     limits[key] = { ...RESOURCE_LIMITS[key] };
-  });
-  SHIP_MODULES.forEach((mod) => {
-    const level = moduleLevels[mod.id] ?? 0;
-    if (level > 0 && limits[mod.resource]) {
-      limits[mod.resource].max += mod.bonus * level;
-    }
   });
   return limits;
 }
