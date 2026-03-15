@@ -63,13 +63,24 @@ export function useSheetData() {
         fetchShipStats(),
         fetchCrew(),
       ]);
-      setSheetData(
-        data ? { ...data, shipStats: shipStats ?? DEFAULT_SHIP_STATS, crew: crew ?? [] } : { shipStats: DEFAULT_SHIP_STATS, crew: crew ?? [] }
-      );
+      setSheetData((prev) => {
+        const preserved = data ?? (prev?.events?.length ? { intro: prev.intro ?? [], events: prev.events } : null);
+        return preserved
+          ? {
+              ...preserved,
+              shipStats: shipStats ?? prev?.shipStats ?? DEFAULT_SHIP_STATS,
+              crew: crew ?? prev?.crew ?? [],
+            }
+          : {
+              shipStats: shipStats ?? DEFAULT_SHIP_STATS,
+              crew: crew ?? [],
+            };
+      });
       setError(null);
     } catch (e) {
       setError(e.message);
-      setSheetData({ shipStats: DEFAULT_SHIP_STATS, crew: [] });
+      // При сетевых сбоях не теряем уже загруженные события из таблицы.
+      setSheetData((prev) => prev ?? { shipStats: DEFAULT_SHIP_STATS, crew: [] });
     } finally {
       setLoading(false);
     }
@@ -128,7 +139,7 @@ export function useSheetData() {
     crew: sheetData?.crew ?? [],
     loading,
     error,
-    fromSheet: !!sheetData,
+    fromSheet: !!sheetData?.events?.length,
     refresh: load,
   };
 }
