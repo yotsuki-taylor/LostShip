@@ -3,10 +3,12 @@ import { events, ENERGY_REGEN_PER_TURN } from './data/events';
 import { INTRO_SLIDES } from './data/intro';
 import { SHIP_MODULES } from './data/modules';
 import { getResourceLimits, applyDeltas, applyDifficultyToDeltas } from './utils/resourceHelpers';
+import { saveGame, loadGame, hasSave, clearSave } from './utils/saveGame';
 import { ResourcePanel } from './components/ResourcePanel';
 import { EventLog } from './components/EventLog';
 import { EventPopup } from './components/EventPopup';
 import { IntroPopup } from './components/IntroPopup';
+import { StartMenu } from './components/StartMenu';
 import { ShipDisplay } from './components/ShipDisplay';
 import { ShipModules } from './components/ShipModules';
 
@@ -51,6 +53,7 @@ function formatDeltaForLog(delta, extra = {}) {
 }
 
 export default function App() {
+  const [showMenu, setShowMenu] = useState(true);
   const [resources, setResources] = useState(INITIAL_RESOURCES);
   const [moduleLevels, setModuleLevels] = useState(INITIAL_MODULE_LEVELS);
   const [turn, setTurn] = useState(0);
@@ -89,12 +92,18 @@ export default function App() {
       }
     } else {
       const calmDelta = formatDeltaForLog({ energy: 2 });
-      setEventLog((prev) => [
-        ...prev.slice(-49),
-        (gotEvent ? '[Ошибка: нет событий]' : 'В буре затишье. Системы стабильны.') + calmDelta,
-      ]);
+      const newLog = [...eventLog.slice(-49), (gotEvent ? '[Ошибка: нет событий]' : 'В буре затишье. Системы стабильны.') + calmDelta];
+      setEventLog(newLog);
+      const newResources = applyDeltas(resources, { energy: 2 }, limits);
+      saveGame({
+        resources: newResources,
+        moduleLevels,
+        turn: turn + 1,
+        eventLog: newLog,
+        stormProgress,
+      });
     }
-  }, [isEventActive, isGameOver, isVictory, limits, turn]);
+  }, [isEventActive, isGameOver, isVictory, limits, turn, resources, eventLog, moduleLevels, stormProgress]);
 
   const handleChoice = useCallback(
     (choiceIndex) => {
@@ -142,8 +151,23 @@ export default function App() {
       setCurrentEvent(null);
       setIsEventActive(false);
       setIsProcessing(false);
+
+      // Сохранение прогресса (только если игра не закончена)
+      const isDead = afterRegen.hull <= 0 || afterRegen.crew <= 0;
+      if (!isDead) {
+        const newTurn = turn + 1;
+        const newStormProgress = Math.min(100, stormProgress + stormGain);
+        const newEventLog = [...eventLog, `Ход ${newTurn}: ${currentEvent.title} → "${choice.text}"${riskSuffix}${deltaStr}${stormStr}`];
+        saveGame({
+          resources: afterRegen,
+          moduleLevels,
+          turn: newTurn,
+          eventLog: newEventLog,
+          stormProgress: newStormProgress,
+        });
+      }
     },
-    [currentEvent, isProcessing, limits, resources, stormProgress, turn]
+    [currentEvent, isProcessing, limits, resources, stormProgress, turn, eventLog, moduleLevels]
   );
 
   const handleUpgrade = useCallback(
@@ -152,15 +176,26 @@ export default function App() {
       if (!mod) return;
       const level = moduleLevels[moduleId] ?? 0;
       if (level >= mod.maxLevel || resources.scrap < mod.cost) return;
-      setModuleLevels((prev) => ({ ...prev, [moduleId]: level + 1 }));
-      setResources((prev) => ({ ...prev, scrap: prev.scrap - mod.cost }));
+      const newModuleLevels = { ...moduleLevels, [moduleId]: level + 1 };
+      const newResources = { ...resources, scrap: resources.scrap - mod.cost };
       const upgradeDelta = formatDeltaForLog({ scrap: -mod.cost });
-      setEventLog((prev) => [...prev.slice(-49), `Улучшение: ${mod.name} до уровня ${level + 1}.${upgradeDelta}`]);
+      const newEventLog = [...eventLog.slice(-49), `Улучшение: ${mod.name} до уровня ${level + 1}.${upgradeDelta}`];
+      setModuleLevels(newModuleLevels);
+      setResources(newResources);
+      setEventLog(newEventLog);
+      saveGame({
+        resources: newResources,
+        moduleLevels: newModuleLevels,
+        turn,
+        eventLog: newEventLog,
+        stormProgress,
+      });
     },
-    [moduleLevels, resources.scrap]
+    [moduleLevels, resources, eventLog, stormProgress, turn]
   );
 
-  const handleRestart = useCallback(() => {
+  const handleNewGame = useCallback(() => {
+    clearSave();
     setResources(INITIAL_RESOURCES);
     setModuleLevels(INITIAL_MODULE_LEVELS);
     setTurn(0);
@@ -170,7 +205,48 @@ export default function App() {
     setStormProgress(0);
     setIsProcessing(false);
     setIntroStep(0);
+    setShowMenu(false);
   }, []);
+
+  const handleContinue = useCallback(() => {
+    const saved = loadGame();
+    if (!saved) return;
+    setResources(saved.resources ?? INITIAL_RESOURCES);
+    setModuleLevels(saved.moduleLevels ?? INITIAL_MODULE_LEVELS);
+    setTurn(saved.turn ?? 0);
+    setEventLog(saved.eventLog ?? []);
+    setCurrentEvent(null);
+    setIsEventActive(false);
+    setStormProgress(saved.stormProgress ?? 0);
+    setIsProcessing(false);
+    setIntroStep(INTRO_SLIDES.length); // Пропустить интро
+    setShowMenu(false);
+  }, []);
+
+  const handleRestart = useCallback(() => {
+    if (isVictory) clearSave();
+    setResources(INITIAL_RESOURCES);
+    setModuleLevels(INITIAL_MODULE_LEVELS);
+    setTurn(0);
+    setEventLog([]);
+    setCurrentEvent(null);
+    setIsEventActive(false);
+    setStormProgress(0);
+    setIsProcessing(false);
+    setIntroStep(0);
+    setShowMenu(true);
+  }, [isVictory]);
+
+  // Стартовое меню
+  if (showMenu) {
+    return (
+      <StartMenu
+        onNewGame={handleNewGame}
+        onContinue={handleContinue}
+        hasSave={hasSave()}
+      />
+    );
+  }
 
   // Интро — три слайда перед началом игры
   if (introStep < INTRO_SLIDES.length) {
