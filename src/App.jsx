@@ -77,7 +77,7 @@ export default function App() {
     }
   }, [shipStats, showMenu]);
 
-  const isGameOver = (resources.hull ?? 0) <= 0 || (resources.morale ?? 0) <= 0;
+  const isGameOver = (resources.hull ?? 0) <= 0;
   const isVictory = stormProgress >= 100;
 
   const pickRandomEvent = useCallback(() => {
@@ -174,7 +174,7 @@ export default function App() {
       setIsEventActive(false);
       setIsProcessing(false);
 
-      const isDead = (afterRegen.hull ?? 0) <= 0 || (afterRegen.morale ?? 0) <= 0;
+      const isDead = (afterRegen.hull ?? 0) <= 0;
       if (!isDead) {
         const newTurn = turn + 1;
         const newStormProgress = Math.min(100, stormProgress + stormGain);
