@@ -94,11 +94,11 @@ export default function App() {
         setCurrentEvent(event);
         setIsEventActive(true);
       } else {
-        setEventLog((prev) => [...prev.slice(-49), '[Ошибка: не удалось выбрать событие]']);
+        setEventLog((prev) => [...prev.slice(-5), '[Ошибка: не удалось выбрать событие]']);
       }
     } else {
       const calmDelta = formatDeltaForLog({ energy: 2 });
-      const newLog = [...eventLog.slice(-49), (gotEvent ? '[Ошибка: нет событий]' : 'В буре затишье. Системы стабильны.') + calmDelta];
+      const newLog = [...eventLog.slice(-5), (gotEvent ? '[Ошибка: нет событий]' : 'В буре затишье. Системы стабильны.') + calmDelta].slice(-5);
       setEventLog(newLog);
       const newResources = applyDeltas(resources, { energy: 2 }, limits);
       saveGame({
@@ -156,9 +156,9 @@ export default function App() {
       const deltaStr = formatDeltaForLog(finalDelta, { energy: ENERGY_REGEN_PER_TURN });
       const stormStr = stormGain > 0 ? ` | Буря: +${stormGain}%` : '';
       setEventLog((prev) => [
-        ...prev.slice(-49),
+        ...prev.slice(-5),
         `Ход ${turn + 1}: ${currentEvent.title} → "${choice.text}"${riskSuffix}${deltaStr}${stormStr}`,
-      ]);
+      ].slice(-5));
 
       setTurn((t) => t + 1);
       setCurrentEvent(null);
@@ -169,7 +169,7 @@ export default function App() {
       if (!isDead) {
         const newTurn = turn + 1;
         const newStormProgress = Math.min(100, stormProgress + stormGain);
-        const newEventLog = [...eventLog, `Ход ${newTurn}: ${currentEvent.title} → "${choice.text}"${riskSuffix}${deltaStr}${stormStr}`];
+        const newEventLog = [...eventLog, `Ход ${newTurn}: ${currentEvent.title} → "${choice.text}"${riskSuffix}${deltaStr}${stormStr}`].slice(-5);
         saveGame({
           resources: afterRegen,
           turn: newTurn,
@@ -209,7 +209,7 @@ export default function App() {
     if (!saved) return;
     setResources(migrateResources(saved.resources) ?? shipStats ?? DEFAULT_SHIP_STATS);
     setTurn(saved.turn ?? 0);
-    setEventLog(saved.eventLog ?? []);
+    setEventLog((saved.eventLog ?? []).slice(-5));
     setCurrentEvent(null);
     setIsEventActive(false);
     setStormProgress(saved.stormProgress ?? 0);
