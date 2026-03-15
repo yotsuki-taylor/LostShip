@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { fetchSheetData } from '../services/sheetLoader';
+import { fetchSheetData, fetchShipStats, DEFAULT_SHIP_STATS } from '../services/sheetLoader';
 import eventsJson from '../data/events.json';
 import { normalizeEvents } from '../data/events';
 
@@ -12,6 +12,7 @@ function inferSetVariableFromText(text) {
   if (/эсмин|destroyer/.test(t)) return { ship: 'destroyer' };
   if (/учёный|ученый|scientist/.test(t)) return { guest: 'scientist' };
   if (/воин|warrior/.test(t)) return { guest: 'warrior' };
+  if (/демон|demon|поиски демона/.test(t)) return { dest: 'demon' };
   if (/маяк|lighthouse|планарный/.test(t)) return { dest: 'lighthouse' };
   if (/рынок|market|мир-рынок/.test(t)) return { dest: 'market' };
   return null;
@@ -57,11 +58,15 @@ export function useSheetData() {
 
   const load = useCallback(async () => {
     try {
-      const data = await fetchSheetData();
-      setSheetData(data);
+      const [data, shipStats] = await Promise.all([
+        fetchSheetData(),
+        fetchShipStats(),
+      ]);
+      setSheetData(data ? { ...data, shipStats: shipStats ?? DEFAULT_SHIP_STATS } : { shipStats: DEFAULT_SHIP_STATS });
       setError(null);
     } catch (e) {
       setError(e.message);
+      setSheetData({ shipStats: DEFAULT_SHIP_STATS });
     } finally {
       setLoading(false);
     }
@@ -112,6 +117,7 @@ export function useSheetData() {
   return {
     events,
     introSlides,
+    shipStats: sheetData?.shipStats ?? DEFAULT_SHIP_STATS,
     loading,
     error,
     fromSheet: !!sheetData,

@@ -1,9 +1,10 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { ENERGY_REGEN_PER_TURN } from './data/events';
-import { getResourceLimits, getResourceLabels, RESOURCE_UNITS, RESOURCE_KEYS, STATUS_VAR_KEYS, applyDeltas, applyDifficultyToDeltas } from './utils/resourceHelpers';
-import { saveGame, loadGame, hasSave, clearSave } from './utils/saveGame';
+import { getResourceLimits, getResourceLabels, RESOURCE_UNITS, DELTA_KEYS, STATUS_VAR_KEYS, applyDeltas, applyDifficultyToDeltas, normalizeDeltaToNewFormat } from './utils/resourceHelpers';
+import { saveGame, loadGame, hasSave, clearSave, migrateResources } from './utils/saveGame';
 import { matchesEventReq } from './services/sheetLoader';
 import { useSheetData } from './hooks/useSheetData';
+import { DEFAULT_SHIP_STATS } from './services/sheetLoader';
 import { StatusPanel } from './components/StatusPanel';
 import { ResourcePanel } from './components/ResourcePanel';
 import { EventLog } from './components/EventLog';
@@ -12,13 +13,6 @@ import { IntroPopup } from './components/IntroPopup';
 import { StartMenu } from './components/StartMenu';
 import { ShipDisplay } from './components/ShipDisplay';
 
-const INITIAL_RESOURCES = {
-  hull: 80,
-  energy: 70,
-  scrap: 25,
-  crew: 50,
-  stability: 70,
-};
 
 const INITIAL_PLAYER_VARS = {
   ship: null,
@@ -30,7 +24,7 @@ const INITIAL_PLAYER_VARS = {
 };
 
 function formatDeltaForLog(delta, extra = {}) {
-  const combined = { ...delta, ...extra };
+  const combined = normalizeDeltaToNewFormat({ ...delta, ...extra });
   const labels = getResourceLabels();
   const parts = [];
   Object.entries(combined).forEach(([key, val]) => {
@@ -46,11 +40,11 @@ function formatDeltaForLog(delta, extra = {}) {
 const MUSIC_PATH = '/LostShip/sound/maintheme.mp3';
 
 export default function App() {
-  const { events, introSlides, fromSheet } = useSheetData();
+  const { events, introSlides, shipStats, fromSheet } = useSheetData();
   const audioRef = useRef(null);
 
   const [showMenu, setShowMenu] = useState(true);
-  const [resources, setResources] = useState(INITIAL_RESOURCES);
+  const [resources, setResources] = useState(DEFAULT_SHIP_STATS);
   const [turn, setTurn] = useState(0);
   const [eventLog, setEventLog] = useState([]);
   const [currentEvent, setCurrentEvent] = useState(null);
@@ -68,7 +62,14 @@ export default function App() {
     }
   }, [showMenu]);
 
-  const isGameOver = resources.hull <= 0 || resources.crew <= 0;
+  // Синхронизация ресурсов со статами из таблицы при загрузке (для меню и новой игры)
+  useEffect(() => {
+    if (shipStats && showMenu) {
+      setResources(shipStats);
+    }
+  }, [shipStats, showMenu]);
+
+  const isGameOver = (resources.hull ?? 0) <= 0 || (resources.morale ?? 0) <= 0;
   const isVictory = stormProgress >= 100;
 
   const pickRandomEvent = useCallback(() => {
@@ -133,7 +134,7 @@ export default function App() {
       const resourceDelta = {};
       const statusFromDelta = {};
       Object.entries(delta).forEach(([k, v]) => {
-        if (RESOURCE_KEYS.includes(k) && typeof v === 'number') resourceDelta[k] = v;
+        if (DELTA_KEYS.includes(k) && typeof v === 'number') resourceDelta[k] = v;
         else if (STATUS_VAR_KEYS.includes(k) && typeof v === 'string') statusFromDelta[k] = v;
       });
       setVariable = { ...statusFromDelta, ...setVariable };
@@ -148,7 +149,7 @@ export default function App() {
       const afterRegen = applyDeltas(afterChoice, { energy: ENERGY_REGEN_PER_TURN }, limits);
       setResources(afterRegen);
 
-      const stormGain = 2 + Math.floor(Math.random() * 4);
+      const stormGain = 2 + Math.floor(Math.random() * 4) + (resources.speed ?? 0);
       setStormProgress((p) => Math.min(100, p + stormGain));
 
       const riskSuffix = riskOutcome ? ` (${riskOutcome === 'success' ? 'успех' : 'провал'})` : '';
@@ -164,7 +165,7 @@ export default function App() {
       setIsEventActive(false);
       setIsProcessing(false);
 
-      const isDead = afterRegen.hull <= 0 || afterRegen.crew <= 0;
+      const isDead = (afterRegen.hull ?? 0) <= 0 || (afterRegen.morale ?? 0) <= 0;
       if (!isDead) {
         const newTurn = turn + 1;
         const newStormProgress = Math.min(100, stormProgress + stormGain);
@@ -190,7 +191,7 @@ export default function App() {
 
   const handleNewGame = useCallback(() => {
     clearSave();
-    setResources(INITIAL_RESOURCES);
+    setResources(shipStats ?? DEFAULT_SHIP_STATS);
     setTurn(0);
     setEventLog([]);
     setCurrentEvent(null);
@@ -201,12 +202,12 @@ export default function App() {
     setPlayerVars(INITIAL_PLAYER_VARS);
     setShowMenu(false);
     audioRef.current?.play().catch(() => {});
-  }, []);
+  }, [shipStats]);
 
   const handleContinue = useCallback(() => {
     const saved = loadGame();
     if (!saved) return;
-    setResources(saved.resources ?? INITIAL_RESOURCES);
+    setResources(migrateResources(saved.resources) ?? shipStats ?? DEFAULT_SHIP_STATS);
     setTurn(saved.turn ?? 0);
     setEventLog(saved.eventLog ?? []);
     setCurrentEvent(null);
@@ -221,7 +222,7 @@ export default function App() {
 
   const handleRestart = useCallback(() => {
     if (isVictory) clearSave();
-    setResources(INITIAL_RESOURCES);
+    setResources(shipStats ?? DEFAULT_SHIP_STATS);
     setTurn(0);
     setEventLog([]);
     setCurrentEvent(null);
@@ -231,7 +232,7 @@ export default function App() {
     setIntroStep(0);
     setPlayerVars(INITIAL_PLAYER_VARS);
     setShowMenu(true);
-  }, [isVictory]);
+  }, [isVictory, shipStats]);
 
   if (showMenu) {
     return (
@@ -267,7 +268,7 @@ export default function App() {
         <div className="min-h-screen bg-zinc-950 text-zinc-300 font-mono flex flex-col items-center justify-center p-8">
         <h2 className="text-2xl font-bold text-red-500 mb-4">Корабль потерян в пустоте</h2>
         <p className="text-zinc-400 mb-6 text-center">
-          Корпус: {resources.hull}% | Лояльность команды: {resources.crew}%
+          Прочность: {resources.hull}% | Мораль: {resources.morale}%
         </p>
         <button
           type="button"
@@ -320,7 +321,7 @@ export default function App() {
 
       <div className="mb-4 terminal-panel p-3">
         <div className="text-cyan-500/90 text-sm font-semibold mb-2">
-          Курс на {playerVars.dest === 'market' ? 'Мир-Рынок' : playerVars.dest === 'lighthouse' ? 'Планарный Маяк' : '—'}
+          Курс на {playerVars.dest === 'demon' ? 'поиски демона' : playerVars.dest === 'market' ? 'Мир-Рынок' : playerVars.dest === 'lighthouse' ? 'Планарный Маяк' : '—'}
         </div>
         <div className="h-4 bg-zinc-800 rounded overflow-hidden border border-zinc-600">
           <div
@@ -335,7 +336,7 @@ export default function App() {
 
       <div className="mb-4">
         <StatusPanel playerVars={playerVars} />
-        <ResourcePanel resources={resources} limits={limits} />
+        <ResourcePanel resources={resources} />
       </div>
 
       <div className="mb-4 flex justify-center">
@@ -345,7 +346,7 @@ export default function App() {
           onClick={handleWait}
           className="px-12 py-4 rounded-lg border-2 border-amber-600 bg-amber-900/30 font-bold text-amber-400 text-lg tracking-wider hover:bg-amber-800/40 hover:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-amber-900/30 transition-colors"
         >
-          {isEventActive ? 'ОЖИДАНИЕ РЕШЕНИЯ...' : 'СКАНИРОВАТЬ ГОРИЗОНТ'}
+          {isEventActive ? 'ОЖИДАНИЕ РЕШЕНИЯ...' : 'ПРОДОЛЖИТЬ ПУТЬ'}
         </button>
       </div>
 

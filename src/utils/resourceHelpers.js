@@ -1,23 +1,36 @@
 import { RESOURCE_LIMITS } from '../data/events';
 
 const RESOURCE_LABELS = {
-  hull: 'Корпус',
+  hull: 'Прочность',
+  speed: 'Скорость',
   energy: 'Энергия',
-  scrap: 'Припасы',
-  crew: 'Лояльность команды',
-  stability: 'Стабильность',
+  attack: 'Атака',
+  supplies: 'Припасы',
+  morale: 'Мораль',
 };
 
-export const RESOURCE_KEYS = ['hull', 'energy', 'scrap', 'crew', 'stability'];
+/** Старые ключи из таблицы/JSON — маппятся в новые при применении */
+const OLD_TO_NEW = {
+  crew: 'morale',
+  stability: 'morale',
+  scrap: 'supplies',
+  energy: 'energy',
+};
+
+export const RESOURCE_KEYS = ['hull', 'speed', 'energy', 'attack', 'supplies', 'morale'];
+
+/** Ключи для проверки дельт из событий (включая старый формат таблицы) */
+export const DELTA_KEYS = [...RESOURCE_KEYS, ...Object.keys(OLD_TO_NEW)];
 
 export const STATUS_VAR_KEYS = ['demon', 'engine', 'ship_mage'];
 
 export const RESOURCE_UNITS = {
   hull: '%',
+  speed: '',
   energy: '%',
-  scrap: '',
-  crew: '%',
-  stability: '%',
+  attack: 'd6',
+  supplies: '',
+  morale: '%',
 };
 
 /**
@@ -62,14 +75,32 @@ export function applyDifficultyToDeltas(deltas, multiplier) {
 }
 
 /**
+ * Преобразует дельты из старого формата (hull, crew, stability, scrap) в новый.
+ * crew и stability суммируются в morale.
+ */
+export function normalizeDeltaToNewFormat(deltas) {
+  const result = {};
+  Object.entries(deltas).forEach(([key, val]) => {
+    if (typeof val !== 'number') return;
+    const newKey = OLD_TO_NEW[key] ?? key;
+    if (RESOURCE_KEYS.includes(newKey)) {
+      result[newKey] = (result[newKey] ?? 0) + val;
+    }
+  });
+  return result;
+}
+
+/**
  * Применяет дельты к ресурсам и возвращает новый объект ресурсов (с учётом лимитов).
+ * Поддерживает старый формат (hull, crew и т.д.) — автоматически маппит в новый.
  */
 export function applyDeltas(resources, deltas, limits) {
+  const normalized = normalizeDeltaToNewFormat(deltas);
   const next = { ...resources };
-  Object.keys(deltas).forEach((key) => {
+  Object.keys(normalized).forEach((key) => {
     if (next[key] !== undefined && limits[key]) {
       next[key] = clampResource(
-        next[key] + (deltas[key] ?? 0),
+        next[key] + (normalized[key] ?? 0),
         limits[key].min,
         limits[key].max
       );

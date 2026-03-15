@@ -2,8 +2,16 @@
  * Загрузка данных из Google Sheets в реальном времени.
  * URL: File → Share → Publish to web → CSV
  */
-const SHEET_URL =
+const SHEET_BASE =
   'https://docs.google.com/spreadsheets/d/e/2PACX-1vTfF7ITJA6Mspd94YBodVbHcn3KT3evIUz5XXQZiZ-xjl-9DG1GbLRAGW3fjqbyUmFk1BKMKkFdBdwA/pub?output=csv';
+const SHEET_URL = SHEET_BASE;
+
+/** gid листа ShipStats — укажите ID вкладки из URL при редактировании таблицы */
+const SHIP_STATS_GID = '1262995639';
+
+const SHIP_STATS_URL = SHIP_STATS_GID ? `${SHEET_BASE}&gid=${SHIP_STATS_GID}` : null;
+
+const SHIP_STATS_HEADERS = ['hull', 'speed', 'energy', 'attack', 'supplies', 'morale'];
 
 /**
  * Парсит CSV с учётом полей в кавычках (Google Sheets экспортирует так).
@@ -308,5 +316,68 @@ export async function fetchSheetData() {
   } catch (e) {
     console.warn('[SheetLoader] Fetch failed:', e.message);
     return null;
+  }
+}
+
+/** Дефолтные статы корабля, если таблица ShipStats недоступна */
+export const DEFAULT_SHIP_STATS = {
+  hull: 80,
+  speed: 1,
+  energy: 70,
+  attack: 1,
+  supplies: 25,
+  morale: 50,
+};
+
+function findCol(headers, names) {
+  const h = headers.map((x) => String(x || '').toLowerCase().trim());
+  for (const n of names) {
+    const idx = h.findIndex((x) => x === n.toLowerCase() || x.includes(n.toLowerCase()));
+    if (idx >= 0) return idx;
+  }
+  return -1;
+}
+
+export async function fetchShipStats(shipType = null) {
+  if (!SHIP_STATS_URL) return DEFAULT_SHIP_STATS;
+  try {
+    const res = await fetch(SHIP_STATS_URL, {
+      mode: 'cors',
+      headers: { Accept: 'text/csv' },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const text = await res.text();
+    const rows = parseCSV(text);
+    if (rows.length < 2) return DEFAULT_SHIP_STATS;
+
+    const headers = rows[0]._headers || Object.keys(rows[0]).filter((k) => !k.startsWith('_'));
+    const statsCol = findCol(headers, ['stats', 'stat', 'параметр', 'param', 'name', 'ключ', 'key']);
+    const valueCol = findCol(headers, ['value', 'значение', 'val', 'значення']);
+
+    if (statsCol < 0 || valueCol < 0) {
+      console.warn('[SheetLoader] ShipStats: не найдены колонки stats и value');
+      return DEFAULT_SHIP_STATS;
+    }
+
+    const stats = { ...DEFAULT_SHIP_STATS };
+    const keyAliases = { health: 'hull', прочность: 'hull', скорость: 'speed', энергия: 'energy', атака: 'attack', припасы: 'supplies', мораль: 'morale' };
+
+    for (const row of rows) {
+      const keyRaw = (row._values?.[statsCol] ?? row[headers[statsCol]] ?? '').toString().trim().toLowerCase();
+      const valRaw = (row._values?.[valueCol] ?? row[headers[valueCol]] ?? '').toString().trim();
+      if (!keyRaw) continue;
+
+      const keyClean = keyRaw.replace(/\s*\(.*\)$/, '').trim();
+      const key = keyAliases[keyClean] ?? (SHIP_STATS_HEADERS.includes(keyClean) ? keyClean : null);
+      if (!key) continue;
+
+      const num = parseInt(valRaw, 10);
+      if (!Number.isNaN(num)) stats[key] = num;
+    }
+
+    return stats;
+  } catch (e) {
+    console.warn('[SheetLoader] ShipStats fetch failed:', e.message);
+    return DEFAULT_SHIP_STATS;
   }
 }

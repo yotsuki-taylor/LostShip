@@ -1,5 +1,28 @@
 const SAVE_KEY = 'lost-ship-save';
 
+const OLD_TO_NEW = { crew: 'morale', stability: 'morale', scrap: 'supplies', energy: 'energy' };
+const NEW_KEYS = ['hull', 'speed', 'energy', 'attack', 'supplies', 'morale'];
+
+/** Миграция старых сохранений (hull, crew, ...) в новый формат */
+export function migrateResources(resources) {
+  if (!resources || typeof resources !== 'object') return null;
+  const hasOld = Object.keys(OLD_TO_NEW).some((k) => resources[k] !== undefined);
+  if (!hasOld) return resources;
+  const out = {};
+  NEW_KEYS.forEach((k) => {
+    out[k] = resources[k];
+  });
+  if (resources.hull !== undefined) out.hull = resources.hull;
+  if (resources.energy !== undefined) out.energy = resources.energy;
+  if (resources.scrap !== undefined) out.supplies = resources.scrap;
+  if (resources.crew !== undefined || resources.stability !== undefined) {
+    out.morale = Math.round(((resources.crew ?? 50) + (resources.stability ?? 50)) / 2);
+  }
+  out.speed = out.speed ?? 1;
+  out.attack = out.attack ?? 1;
+  return out;
+}
+
 export function saveGame(state) {
   try {
     const data = {

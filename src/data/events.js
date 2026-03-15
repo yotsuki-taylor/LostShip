@@ -27,9 +27,24 @@ export function normalizeEvents(raw) {
   }));
 }
 
+/** Старые ключи в таблице/JSON — при нормализации маппятся в новые */
+const OLD_KEYS = { crew: 'morale', stability: 'morale', scrap: 'supplies', energy: 'energy' };
+
+function mapConsequencesToNew(obj) {
+  const out = {};
+  Object.entries(obj).forEach(([k, v]) => {
+    const newKey = OLD_KEYS[k] ?? k;
+    if (['hull', 'speed', 'energy', 'attack', 'supplies', 'morale'].includes(newKey)) {
+      out[newKey] = (out[newKey] ?? 0) + (typeof v === 'number' ? v : 0);
+    }
+  });
+  return out;
+}
+
 function ensureAllResources(obj) {
-  const defaults = { hull: 0, energy: 0, scrap: 0, crew: 0, stability: 0 };
-  return { ...defaults, ...obj };
+  const mapped = mapConsequencesToNew(obj);
+  const defaults = { hull: 0, speed: 0, energy: 0, attack: 0, supplies: 0, morale: 0 };
+  return { ...defaults, ...mapped };
 }
 
 export const events = normalizeEvents(eventsJson);
@@ -40,8 +55,9 @@ export const ENERGY_REGEN_PER_TURN = 8;
 /** Минимальные/максимальные значения ресурсов */
 export const RESOURCE_LIMITS = {
   hull: { min: 0, max: 100 },
+  speed: { min: 0, max: 10 },
   energy: { min: 0, max: 100 },
-  scrap: { min: 0, max: 999 },
-  crew: { min: 0, max: 100 },
-  stability: { min: 0, max: 100 },
+  attack: { min: 0, max: 10 },
+  supplies: { min: 0, max: 999 },
+  morale: { min: 0, max: 100 },
 };

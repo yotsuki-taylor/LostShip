@@ -25,7 +25,7 @@
 Выборы в интро задают переменные:
 - **ship**: `merchant` | `destroyer`
 - **guest**: `scientist` | `warrior`
-- **dest**: `lighthouse` | `market`
+- **dest**: `lighthouse` | `market` | `demon` (поиски демона)
 
 В `opt1_consequences` укажите JSON: `{"ship": "merchant"}` и т.п.
 
@@ -41,3 +41,22 @@
 ## Разделитель
 
 Таблица может использовать `;` или `,` — парсер определит автоматически.
+
+## Вкладка ShipStats
+
+Отдельный лист с начальными статами корабля. В `sheetLoader.js` укажите `SHIP_STATS_GID` — ID вкладки из URL при редактировании таблицы (параметр `gid=`).
+
+**Формат:** две колонки — `stats` (название переменной) и `value` (значение).
+
+| stats | value |
+|-------|-------|
+| hull | 80 |
+| speed | 1 |
+| energy | 70 |
+| attack | 1 |
+| supplies | 25 |
+| morale | 50 |
+
+Поддерживаются русские названия: прочность→hull, скорость→speed, энергия→energy, атака→attack, припасы→supplies, мораль→morale.
+
+События в основной таблице могут использовать старый формат в `opt_consequences`: `hull`, `crew`, `stability`, `scrap`, `energy` — `crew` и `stability` маппятся в `morale`, `scrap` в `supplies`.
