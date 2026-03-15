@@ -1,10 +1,12 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { events, ENERGY_REGEN_PER_TURN } from './data/events';
+import { INTRO_SLIDES } from './data/intro';
 import { SHIP_MODULES } from './data/modules';
 import { getResourceLimits, applyDeltas, applyDifficultyToDeltas } from './utils/resourceHelpers';
 import { ResourcePanel } from './components/ResourcePanel';
 import { EventLog } from './components/EventLog';
 import { EventPopup } from './components/EventPopup';
+import { IntroPopup } from './components/IntroPopup';
 import { ShipDisplay } from './components/ShipDisplay';
 import { ShipModules } from './components/ShipModules';
 
@@ -57,6 +59,7 @@ export default function App() {
   const [isEventActive, setIsEventActive] = useState(false);
   const [stormProgress, setStormProgress] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [introStep, setIntroStep] = useState(0);
 
   const limits = useMemo(() => getResourceLimits(moduleLevels), [moduleLevels]);
 
@@ -166,7 +169,20 @@ export default function App() {
     setIsEventActive(false);
     setStormProgress(0);
     setIsProcessing(false);
+    setIntroStep(0);
   }, []);
+
+  // Интро — три слайда перед началом игры
+  if (introStep < INTRO_SLIDES.length) {
+    return (
+      <div className="min-h-screen bg-zinc-950">
+        <IntroPopup
+          slide={INTRO_SLIDES[introStep]}
+          onNext={() => setIntroStep((s) => s + 1)}
+        />
+      </div>
+    );
+  }
 
   // Экран поражения
   if (isGameOver) {
