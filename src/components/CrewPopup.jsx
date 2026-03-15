@@ -29,11 +29,11 @@ export function CrewPopup({ crew, onClose }) {
               key={c.id}
               className="flex flex-col items-center p-3 rounded border border-zinc-600 bg-zinc-800/50"
             >
-              <div className="relative rounded overflow-hidden bg-zinc-700 flex-shrink-0 mb-2 min-w-[6rem] min-h-[3.5rem] flex justify-center">
+              <div className="relative w-full rounded overflow-hidden bg-zinc-700 flex-shrink-0 mb-2 aspect-[7/5]">
                 <img
                   src={avatarSrc}
                   alt=""
-                  className="block w-auto h-auto max-w-[200px] max-h-[120px] object-contain"
+                  className="block w-full h-full object-contain"
                   onError={(e) => {
                     e.target.style.display = 'none';
                     const fb = e.target.parentElement?.querySelector('.avatar-fallback');
