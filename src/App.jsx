@@ -44,6 +44,75 @@ function withFixedShipStats(resources) {
   return { ...resources, speed: FIXED_SPEED, attack: FIXED_ATTACK };
 }
 
+function getCrewStatusFromHp(hp) {
+  if (hp <= 0) return 'убит';
+  if (hp < 20) return 'ранен';
+  return 'работает';
+}
+
+function isMedicMember(member) {
+  const id = String(member?.id || '').toLowerCase();
+  const role = String(member?.role || '').toLowerCase();
+  return id === 'medic' || role.includes('medic') || role.includes('медик');
+}
+
+function rollInitialCrewDamage(rawCrew) {
+  return (rawCrew || []).map((member) => {
+    const hp = Number.isFinite(member.hp) ? member.hp : 20;
+    const maxDamage = Math.max(0, Math.min(8, hp - 1));
+    const damage = maxDamage > 0 ? Math.floor(Math.random() * (maxDamage + 1)) : 0;
+    const nextHp = Math.max(1, hp - damage);
+    return {
+      ...member,
+      hp: nextHp,
+      status: getCrewStatusFromHp(nextHp),
+    };
+  });
+}
+
+function applyPassiveCrewEffects(rawCrew, currentResources, limits) {
+  const crew = rawCrew || [];
+  let squadHeal = 0;
+  const resourceDelta = {};
+
+  crew.forEach((member) => {
+    const hp = member?.hp ?? 0;
+    if (hp <= 0) return;
+
+    // Особое правило для медика: при ранении лечит слабее.
+    if (isMedicMember(member) && member?.status === 'ранен') {
+      squadHeal += 1;
+      return;
+    }
+
+    const isWorking = member?.status === 'работает';
+    if (!isWorking || !member?.passiveEffect) return;
+
+    Object.entries(member.passiveEffect).forEach(([key, value]) => {
+      if (typeof value !== 'number') return;
+      if (key === 'hp') {
+        squadHeal += value;
+      } else {
+        resourceDelta[key] = (resourceDelta[key] ?? 0) + value;
+      }
+    });
+  });
+
+  const nextCrew = squadHeal > 0
+    ? crew.map((member) => {
+        if ((member.hp ?? 0) <= 0) return member;
+        const nextHp = Math.min(20, (member.hp ?? 0) + squadHeal);
+        return { ...member, hp: nextHp, status: getCrewStatusFromHp(nextHp) };
+      })
+    : crew;
+
+  const nextResources = Object.keys(resourceDelta).length > 0
+    ? applyDeltas(currentResources, resourceDelta, limits)
+    : currentResources;
+
+  return { crew: nextCrew, resources: nextResources };
+}
+
 export default function App() {
   const { events, introSlides, shipStats, crew, fromSheet } = useSheetData();
   const audioRef = useRef(null);
@@ -93,7 +162,12 @@ export default function App() {
     const isFirstClick = turn === 0;
     const gotEvent = isFirstClick || roll < 0.7;
 
-    setResources((prev) => applyDeltas(prev, { energy: 2 }, limits));
+    const passiveApplied = applyPassiveCrewEffects(gameCrew, resources, limits);
+    const nextCrew = passiveApplied.crew;
+    const afterPassiveResources = passiveApplied.resources;
+    const tickResources = applyDeltas(afterPassiveResources, { energy: 2 }, limits);
+    setGameCrew(nextCrew);
+    setResources(tickResources);
     setTurn((t) => t + 1);
 
     if (gotEvent && events.length > 0) {
@@ -108,14 +182,13 @@ export default function App() {
       const calmDelta = formatDeltaForLog({ energy: 2 });
       const newLog = [...eventLog.slice(-5), (gotEvent ? '[Ошибка: нет событий]' : 'В буре затишье. Системы стабильны.') + calmDelta].slice(-5);
       setEventLog(newLog);
-      const newResources = applyDeltas(resources, { energy: 2 }, limits);
       saveGame({
-        resources: newResources,
+        resources: tickResources,
         turn: turn + 1,
         eventLog: newLog,
         stormProgress,
         playerVars,
-        crew: gameCrew,
+        crew: nextCrew,
       });
     }
   }, [isEventActive, isGameOver, isVictory, limits, turn, resources, eventLog, stormProgress, playerVars, gameCrew, events, pickRandomEvent]);
@@ -209,7 +282,7 @@ export default function App() {
   const handleNewGame = useCallback(() => {
     clearSave();
     setResources(withFixedShipStats(shipStats ?? DEFAULT_SHIP_STATS));
-    setGameCrew(pickCrewNames(crew));
+    setGameCrew(rollInitialCrewDamage(pickCrewNames(crew)));
     setTurn(0);
     setEventLog([]);
     setCurrentEvent(null);

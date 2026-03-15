@@ -472,6 +472,17 @@ export function pickCrewNames(rawCrew) {
   }));
 }
 
+function normalizePassiveEffect(effect) {
+  if (!effect || typeof effect !== 'object') return null;
+  const normalized = {};
+  Object.entries(effect).forEach(([k, v]) => {
+    const key = String(k || '').trim().toLowerCase();
+    const num = parseNum(v);
+    if (key && num !== null) normalized[key] = num;
+  });
+  return Object.keys(normalized).length ? normalized : null;
+}
+
 function getStatusFromHp(hp) {
   const h = parseInt(hp, 10);
   if (Number.isNaN(h) || h <= 0) return 'убит';
@@ -491,6 +502,7 @@ export async function fetchCrew() {
     const roleCol = findColCrew(headers, ['role', 'должность', 'role']);
     const nameCol = findColCrew(headers, ['name', 'имя', 'name']);
     const hpCol = findColCrew(headers, ['hp', 'здоровье', 'health']);
+    const passiveCol = findColCrew(headers, ['passive', 'passive_effect', 'passive effect', 'effect', 'пассив', 'пассивный эффект']);
 
     const crew = [];
     for (const row of rows) {
@@ -498,6 +510,8 @@ export async function fetchCrew() {
       const role = roleCol >= 0 ? (row._values?.[roleCol] ?? row[headers[roleCol]] ?? '').toString().trim() : '—';
       const nameRaw = nameCol >= 0 ? (row._values?.[nameCol] ?? row[headers[nameCol]] ?? '').toString().trim() : '—';
       const hp = hpCol >= 0 ? (row._values?.[hpCol] ?? row[headers[hpCol]] ?? '20').toString().trim() : '20';
+      const passiveRaw = passiveCol >= 0 ? (row._values?.[passiveCol] ?? row[headers[passiveCol]] ?? '').toString().trim() : '';
+      const passiveEffect = normalizePassiveEffect(parseConsequences(passiveRaw));
 
       crew.push({
         id: id || crew.length,
@@ -505,6 +519,7 @@ export async function fetchCrew() {
         nameList: nameRaw,
         hp: parseInt(hp, 10) || 20,
         status: getStatusFromHp(hp),
+        passiveEffect,
       });
     }
     return crew;
