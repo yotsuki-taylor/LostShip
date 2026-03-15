@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { fetchSheetData, fetchShipStats, DEFAULT_SHIP_STATS } from '../services/sheetLoader';
+import { fetchSheetData, fetchShipStats, fetchCrew, DEFAULT_SHIP_STATS } from '../services/sheetLoader';
 import eventsJson from '../data/events.json';
 import { normalizeEvents } from '../data/events';
 
@@ -58,15 +58,18 @@ export function useSheetData() {
 
   const load = useCallback(async () => {
     try {
-      const [data, shipStats] = await Promise.all([
+      const [data, shipStats, crew] = await Promise.all([
         fetchSheetData(),
         fetchShipStats(),
+        fetchCrew(),
       ]);
-      setSheetData(data ? { ...data, shipStats: shipStats ?? DEFAULT_SHIP_STATS } : { shipStats: DEFAULT_SHIP_STATS });
+      setSheetData(
+        data ? { ...data, shipStats: shipStats ?? DEFAULT_SHIP_STATS, crew: crew ?? [] } : { shipStats: DEFAULT_SHIP_STATS, crew: crew ?? [] }
+      );
       setError(null);
     } catch (e) {
       setError(e.message);
-      setSheetData({ shipStats: DEFAULT_SHIP_STATS });
+      setSheetData({ shipStats: DEFAULT_SHIP_STATS, crew: [] });
     } finally {
       setLoading(false);
     }
@@ -118,6 +121,7 @@ export function useSheetData() {
     events,
     introSlides,
     shipStats: sheetData?.shipStats ?? DEFAULT_SHIP_STATS,
+    crew: sheetData?.crew ?? [],
     loading,
     error,
     fromSheet: !!sheetData,

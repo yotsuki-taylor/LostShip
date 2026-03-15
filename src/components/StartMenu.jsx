@@ -9,7 +9,7 @@ export function StartMenu({ onNewGame, onContinue, hasSave }) {
       <h1 className="text-3xl font-bold text-amber-500/90 tracking-wider mb-2">
         LOST SHIP
       </h1>
-      <p className="text-zinc-500 text-sm mb-12 text-center max-w-md">Там, где гаснет свет миров, начинается твой путь сквозь астральный хаос</p>
+      <p className="text-zinc-500 text-sm mb-12 text-center max-w-md">Там, где гаснет свет миров, начинается твой путь сквозь планарный хаос</p>
 
       <div className="flex flex-col gap-4 w-full max-w-xs">
         <button

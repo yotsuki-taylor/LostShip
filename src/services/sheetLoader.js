@@ -8,8 +8,11 @@ const SHEET_URL = SHEET_BASE;
 
 /** gid листа ShipStats — укажите ID вкладки из URL при редактировании таблицы */
 const SHIP_STATS_GID = '1262995639';
+/** gid листа Crew/Команда */
+const CREW_GID = '21323879';
 
 const SHIP_STATS_URL = SHIP_STATS_GID ? `${SHEET_BASE}&gid=${SHIP_STATS_GID}` : null;
+const CREW_URL = CREW_GID ? `${SHEET_BASE}&gid=${CREW_GID}` : null;
 
 const SHIP_STATS_HEADERS = ['hull', 'speed', 'energy', 'attack', 'supplies', 'morale'];
 
@@ -379,5 +382,79 @@ export async function fetchShipStats(shipType = null) {
   } catch (e) {
     console.warn('[SheetLoader] ShipStats fetch failed:', e.message);
     return DEFAULT_SHIP_STATS;
+  }
+}
+
+function findColCrew(headers, names) {
+  const h = headers.map((x) => String(x || '').toLowerCase().trim());
+  for (const n of names) {
+    const idx = h.findIndex((x) => x === n.toLowerCase() || x.includes(n.toLowerCase()));
+    if (idx >= 0) return idx;
+  }
+  return -1;
+}
+
+export function pickRandomName(str) {
+  if (!str || !str.trim()) return '—';
+  const parts = str.split(',').map((s) => s.trim()).filter(Boolean);
+  return parts[Math.floor(Math.random() * parts.length)] || '—';
+}
+
+/** Выбирает имена для команды один раз при старте игры */
+export function pickCrewNames(rawCrew) {
+  if (!rawCrew?.length) return [];
+  return rawCrew.map((c) => ({
+    ...c,
+    name: pickRandomName(c.nameList ?? c.name ?? ''),
+  }));
+}
+
+function getStatusFromHp(hp) {
+  const h = parseInt(hp, 10);
+  if (Number.isNaN(h) || h <= 0) return 'убит';
+  if (h < 20) return 'ранен';
+  return 'работает';
+}
+
+export async function fetchCrew() {
+  if (!CREW_URL) return [];
+  try {
+    const res = await fetch(CREW_URL, {
+      mode: 'cors',
+      headers: { Accept: 'text/csv' },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const text = await res.text();
+    const rows = parseCSV(text);
+    if (rows.length < 2) return [];
+
+    const headers = rows[0]._headers || Object.keys(rows[0]).filter((k) => !k.startsWith('_'));
+    const idCol = findColCrew(headers, ['id']);
+    const roleCol = findColCrew(headers, ['role', 'должность', 'role']);
+    const nameCol = findColCrew(headers, ['name', 'имя', 'name']);
+    const hpCol = findColCrew(headers, ['hp', 'здоровье', 'health']);
+    const avatarCol = findColCrew(headers, ['avatar', 'аватар', 'image', 'img', 'фото']);
+
+    const crew = [];
+    for (const row of rows) {
+      const id = idCol >= 0 ? (row._values?.[idCol] ?? row[headers[idCol]] ?? '').toString().trim() : '';
+      const role = roleCol >= 0 ? (row._values?.[roleCol] ?? row[headers[roleCol]] ?? '').toString().trim() : '—';
+      const nameRaw = nameCol >= 0 ? (row._values?.[nameCol] ?? row[headers[nameCol]] ?? '').toString().trim() : '—';
+      const hp = hpCol >= 0 ? (row._values?.[hpCol] ?? row[headers[hpCol]] ?? '20').toString().trim() : '20';
+      const avatar = avatarCol >= 0 ? (row._values?.[avatarCol] ?? row[headers[avatarCol]] ?? '').toString().trim() : '';
+
+      crew.push({
+        id: id || crew.length,
+        role,
+        nameList: nameRaw,
+        hp: parseInt(hp, 10) || 20,
+        status: getStatusFromHp(hp),
+        avatar: avatar || null,
+      });
+    }
+    return crew;
+  } catch (e) {
+    console.warn('[SheetLoader] Crew fetch failed:', e.message);
+    return [];
   }
 }

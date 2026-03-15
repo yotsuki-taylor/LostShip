@@ -2,7 +2,7 @@ import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react'
 import { ENERGY_REGEN_PER_TURN } from './data/events';
 import { getResourceLimits, getResourceLabels, RESOURCE_UNITS, DELTA_KEYS, STATUS_VAR_KEYS, applyDeltas, applyDifficultyToDeltas, normalizeDeltaToNewFormat } from './utils/resourceHelpers';
 import { saveGame, loadGame, hasSave, clearSave, migrateResources } from './utils/saveGame';
-import { matchesEventReq } from './services/sheetLoader';
+import { matchesEventReq, pickCrewNames } from './services/sheetLoader';
 import { useSheetData } from './hooks/useSheetData';
 import { DEFAULT_SHIP_STATS } from './services/sheetLoader';
 import { StatusPanel } from './components/StatusPanel';
@@ -12,6 +12,8 @@ import { EventPopup } from './components/EventPopup';
 import { IntroPopup } from './components/IntroPopup';
 import { StartMenu } from './components/StartMenu';
 import { ShipDisplay } from './components/ShipDisplay';
+import { MapPopup } from './components/MapPopup';
+import { CrewPopup } from './components/CrewPopup';
 
 
 const INITIAL_PLAYER_VARS = {
@@ -40,7 +42,7 @@ function formatDeltaForLog(delta, extra = {}) {
 const MUSIC_PATH = '/LostShip/sound/maintheme.mp3';
 
 export default function App() {
-  const { events, introSlides, shipStats, fromSheet } = useSheetData();
+  const { events, introSlides, shipStats, crew, fromSheet } = useSheetData();
   const audioRef = useRef(null);
 
   const [showMenu, setShowMenu] = useState(true);
@@ -53,6 +55,9 @@ export default function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [introStep, setIntroStep] = useState(0);
   const [playerVars, setPlayerVars] = useState(INITIAL_PLAYER_VARS);
+  const [showMapPopup, setShowMapPopup] = useState(false);
+  const [showCrewPopup, setShowCrewPopup] = useState(false);
+  const [gameCrew, setGameCrew] = useState([]);
 
   const limits = useMemo(() => getResourceLimits(), []);
 
@@ -107,9 +112,10 @@ export default function App() {
         eventLog: newLog,
         stormProgress,
         playerVars,
+        crew: gameCrew,
       });
     }
-  }, [isEventActive, isGameOver, isVictory, limits, turn, resources, eventLog, stormProgress, playerVars, events, pickRandomEvent]);
+  }, [isEventActive, isGameOver, isVictory, limits, turn, resources, eventLog, stormProgress, playerVars, gameCrew, events, pickRandomEvent]);
 
   const handleChoice = useCallback(
     (choiceOrIndex) => {
@@ -176,10 +182,11 @@ export default function App() {
           eventLog: newEventLog,
           stormProgress: newStormProgress,
           playerVars: newPlayerVars,
+          crew: gameCrew,
         });
       }
     },
-    [currentEvent, isProcessing, limits, resources, stormProgress, turn, eventLog, playerVars]
+    [currentEvent, isProcessing, limits, resources, stormProgress, turn, eventLog, playerVars, gameCrew]
   );
 
   const handleIntroNext = useCallback((choice) => {
@@ -192,6 +199,7 @@ export default function App() {
   const handleNewGame = useCallback(() => {
     clearSave();
     setResources(shipStats ?? DEFAULT_SHIP_STATS);
+    setGameCrew(pickCrewNames(crew));
     setTurn(0);
     setEventLog([]);
     setCurrentEvent(null);
@@ -202,12 +210,13 @@ export default function App() {
     setPlayerVars(INITIAL_PLAYER_VARS);
     setShowMenu(false);
     audioRef.current?.play().catch(() => {});
-  }, [shipStats]);
+  }, [shipStats, crew]);
 
   const handleContinue = useCallback(() => {
     const saved = loadGame();
     if (!saved) return;
     setResources(migrateResources(saved.resources) ?? shipStats ?? DEFAULT_SHIP_STATS);
+    setGameCrew(saved.crew ?? []);
     setTurn(saved.turn ?? 0);
     setEventLog((saved.eventLog ?? []).slice(-5));
     setCurrentEvent(null);
@@ -218,11 +227,12 @@ export default function App() {
     setIntroStep(introSlides.length);
     setShowMenu(false);
     audioRef.current?.play().catch(() => {});
-  }, [introSlides.length]);
+  }, [introSlides.length, shipStats]);
 
   const handleRestart = useCallback(() => {
     if (isVictory) clearSave();
     setResources(shipStats ?? DEFAULT_SHIP_STATS);
+    setGameCrew([]);
     setTurn(0);
     setEventLog([]);
     setCurrentEvent(null);
@@ -334,6 +344,32 @@ export default function App() {
         <ResourcePanel resources={resources} />
       </div>
 
+      <EventPopup
+        event={currentEvent}
+        onChoice={handleChoice}
+        disabled={isProcessing}
+        playerVars={playerVars}
+      />
+
+      <EventLog entries={eventLog} />
+
+      <div className="mb-4 flex justify-between gap-4">
+        <button
+          type="button"
+          onClick={() => setShowMapPopup(true)}
+          className="flex-1 py-3 rounded border-2 border-zinc-600 bg-zinc-800/50 font-mono text-zinc-300 hover:border-amber-500 hover:text-amber-400 transition-colors"
+        >
+          Карта
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowCrewPopup(true)}
+          className="flex-1 py-3 rounded border-2 border-zinc-600 bg-zinc-800/50 font-mono text-zinc-300 hover:border-amber-500 hover:text-amber-400 transition-colors"
+        >
+          Команда
+        </button>
+      </div>
+
       <div className="mb-4 flex justify-center">
         <button
           type="button"
@@ -345,14 +381,8 @@ export default function App() {
         </button>
       </div>
 
-      <EventPopup
-        event={currentEvent}
-        onChoice={handleChoice}
-        disabled={isProcessing}
-        playerVars={playerVars}
-      />
-
-      <EventLog entries={eventLog} />
+      {showMapPopup && <MapPopup onClose={() => setShowMapPopup(false)} />}
+      {showCrewPopup && <CrewPopup crew={gameCrew} onClose={() => setShowCrewPopup(false)} />}
     </div>
     </>
   );
