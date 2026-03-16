@@ -33,6 +33,7 @@ export function saveGame(state) {
       playerVars: state.playerVars ?? {},
       crew: state.crew ?? [],
       mapState: state.mapState ?? null,
+      nextDestinationEventId: state.nextDestinationEventId ?? 1,
     };
     localStorage.setItem(SAVE_KEY, JSON.stringify(data));
     return true;

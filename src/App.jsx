@@ -172,6 +172,7 @@ export default function App() {
   const [isWarping, setIsWarping] = useState(false);
   const [pendingStormProgress, setPendingStormProgress] = useState(null);
   const [musicEnabled, setMusicEnabled] = useState(getMusicEnabled);
+  const [nextDestinationEventId, setNextDestinationEventId] = useState(1);
   const pendingJumpRef = useRef(null);
 
   const limits = useMemo(() => getResourceLimits(), []);
@@ -213,11 +214,43 @@ export default function App() {
     if (isGameOver) clearSave();
   }, [isGameOver]);
 
-  const pickRandomEvent = useCallback(() => {
-    const eligible = events.filter((e) => matchesEventReq(e.event_req, playerVars));
-    const pool = eligible.length > 0 ? eligible : events;
-    return pool[Math.floor(Math.random() * pool.length)];
-  }, [events, playerVars]);
+  const isDestinationEvent = useCallback((e) => {
+    const ev = (e?.event || '').toLowerCase();
+    return ev === 'destination_lighthouse' || ev === 'destination_demon';
+  }, []);
+
+  const pickNextEvent = useCallback(
+    (nextDestId) => {
+      const dest = playerVars.dest;
+      const destEvents = events
+        .filter((e) => {
+          const ev = (e?.event || '').toLowerCase();
+          if (ev === 'destination_lighthouse') return dest === 'lighthouse';
+          if (ev === 'destination_demon') return dest === 'demon';
+          return false;
+        })
+        .sort((a, b) => (Number(a.id) || 0) - (Number(b.id) || 0));
+      const randomEvents = events.filter(
+        (e) => (e?.event || '').toLowerCase() === 'random' && matchesEventReq(e.event_req, playerVars)
+      );
+
+      const destById = (id) => destEvents.find((e) => Number(e.id) === Number(id));
+
+      if (nextDestId === 1 && destById(1)) {
+        return destById(1);
+      }
+      if (destEvents.length === 0 || randomEvents.length === 0) {
+        const fallback = [...destEvents, ...randomEvents].filter(Boolean);
+        return fallback[Math.floor(Math.random() * fallback.length)];
+      }
+      const useDest = destById(nextDestId);
+      if (Math.random() < 0.3 && useDest) {
+        return useDest;
+      }
+      return randomEvents[Math.floor(Math.random() * randomEvents.length)];
+    },
+    [events, playerVars, isDestinationEvent]
+  );
 
   const handleMapNodeClick = useCallback(
     (targetNodeId) => {
@@ -269,11 +302,16 @@ export default function App() {
 
     setEventLog(newEventLog);
 
+    let newNextDestId = nextDestinationEventId;
     if (willShowEvent) {
-      const event = pickRandomEvent();
+      const event = pickNextEvent(nextDestinationEventId);
       if (event) {
         setCurrentEvent(event);
         setIsEventActive(true);
+        if (isDestinationEvent(event)) {
+          newNextDestId = (Number(event.id) || 0) + 1;
+          setNextDestinationEventId(newNextDestId);
+        }
       } else {
         setEventLog((prev) => [...prev.slice(-5), '[Ошибка: не удалось выбрать событие]']);
         setStormProgress(newStormProgress);
@@ -289,8 +327,9 @@ export default function App() {
       playerVars,
       crew: nextCrew,
       mapState: serializeMapState(nextMapState),
+      nextDestinationEventId: newNextDestId,
     });
-  }, [mapState, gameCrew, resources, limits, turn, stormProgress, playerVars, events, pickRandomEvent, eventLog]);
+  }, [mapState, gameCrew, resources, limits, turn, stormProgress, playerVars, events, pickNextEvent, isDestinationEvent, nextDestinationEventId, eventLog]);
 
   const handleChoice = useCallback(
     (choiceOrIndex) => {
@@ -363,10 +402,11 @@ export default function App() {
           playerVars: newPlayerVars,
           crew: nextCrew,
           mapState: mapState ? serializeMapState(mapState) : null,
+          nextDestinationEventId,
         });
       }
     },
-    [currentEvent, isProcessing, limits, resources, stormProgress, pendingStormProgress, turn, eventLog, playerVars, gameCrew, mapState]
+    [currentEvent, isProcessing, limits, resources, stormProgress, pendingStormProgress, turn, eventLog, playerVars, gameCrew, mapState, nextDestinationEventId]
   );
 
   const handleIntroNext = useCallback(
@@ -399,6 +439,7 @@ export default function App() {
     setIsProcessing(false);
     setIntroStep(0);
     setPlayerVars(INITIAL_PLAYER_VARS);
+    setNextDestinationEventId(1);
     setShowMenu(false);
     audioRef.current?.play().catch(() => {});
   }, [shipStats, crew]);
@@ -418,6 +459,7 @@ export default function App() {
     setStormProgress(saved.stormProgress ?? 0);
     setIsProcessing(false);
     setPlayerVars(saved.playerVars ?? INITIAL_PLAYER_VARS);
+    setNextDestinationEventId(saved.nextDestinationEventId ?? 1);
     setIntroStep(introSlides.length);
     setShowMenu(false);
     audioRef.current?.play().catch(() => {});
@@ -438,6 +480,7 @@ export default function App() {
     setIsProcessing(false);
     setIntroStep(0);
     setPlayerVars(INITIAL_PLAYER_VARS);
+    setNextDestinationEventId(1);
     setShowMenu(true);
   }, [isVictory, shipStats]);
 
@@ -521,7 +564,7 @@ export default function App() {
           <button
             type="button"
             onClick={() => {
-              saveGame({ resources, turn, eventLog, stormProgress, playerVars, crew: gameCrew, mapState: mapState ? serializeMapState(mapState) : null });
+              saveGame({ resources, turn, eventLog, stormProgress, playerVars, crew: gameCrew, mapState: mapState ? serializeMapState(mapState) : null, nextDestinationEventId });
               setShowMenu(true);
             }}
             className="p-1.5 rounded border-2 border-zinc-600 bg-zinc-800/50 hover:border-amber-500 hover:bg-zinc-700/50 transition-colors"

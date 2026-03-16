@@ -10,7 +10,7 @@
 
 | Колонка | Описание |
 |---------|----------|
-| event | `intro` — интро, `random` — случайные ивенты |
+| event | `intro` — интро, `random` — случайные ивенты, `destination_lighthouse` — только при курсе на Маяк, `destination_demon` — только при поисках демона. Destination-ивенты идут по порядку id (1, 2, 3…), между ними вставляются random (70% random / 30% следующий destination). Первый ивент курса — всегда destination id 1. |
 | event_req | Условия для ивента (пусто = без условий). Формат: `ship=merchant` или `ship=merchant\|guest=scientist` |
 | id | Номер внутри цепочки |
 | title | Название |

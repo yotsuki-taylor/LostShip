@@ -100,11 +100,12 @@ export function useSheetData() {
   const localEvents = normalizeEvents(eventsJson);
   let events = sheetData?.events?.length ? sheetData.events : localEvents;
 
-  // Если события из таблицы пришли без вариантов — подставляем choices из локальных
+  // Если события из таблицы пришли без вариантов — подставляем choices только при точном совпадении title
+  // (не по id: у random и destination_* могут совпадать id, но это разные ивенты)
   if (sheetData?.events?.length && events === sheetData.events) {
     events = events.map((e) => {
       if (e.choices?.length > 0) return e;
-      const local = localEvents.find((l) => String(l.id) === String(e.id) || l.title === e.title);
+      const local = localEvents.find((l) => (l.title || '').trim() === (e.title || '').trim());
       return local ? { ...e, choices: local.choices } : e;
     });
   }

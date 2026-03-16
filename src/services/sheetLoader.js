@@ -146,9 +146,11 @@ function splitConsequences(obj) {
 }
 
 function rowToEvent(row) {
+  const textsByPosition = getOptTextsByPosition(row);
+  const fallbackTexts = textsByPosition.length > 0 ? textsByPosition : getAllOptTextsFromRow(row);
   const choices = [];
   for (let i = 1; i <= 4; i++) {
-    const text = getOptText(row, i);
+    const text = getOptText(row, i) || textsByPosition[i - 1] || fallbackTexts[i - 1] || getRowValue(row, `вариант ${i}`) || getRowValue(row, `вариант${i}`);
     if (!text) break;
     const optReq = getOptReq(row, i);
     const consequences = getOptConsequences(row, i);
@@ -373,16 +375,29 @@ export async function fetchSheetData() {
     if (mainRows.length === 0) return null;
 
     const getEvent = (r) => (getRowValue(r, 'event') || r.event || '').toLowerCase();
-    const randomRows = mainRows.filter((r) => getEvent(r) === 'random');
+    const eventRow = (r) => {
+      const ev = getEvent(r);
+      return ev === 'random' || ev === 'destination_lighthouse' || ev === 'destination_demon';
+    };
+    const eventRows = mainRows.filter(eventRow);
     let intro = parseIntroFromRows(mainRows);
     if (intro.length === 0 && introText) {
       const introRows = parseCSV(introText);
       intro = parseIntroFromRows(introRows);
     }
 
+    const events = eventRows.map((row) => {
+      const ev = rowToEvent(row);
+      const evType = (ev.event || '').toLowerCase();
+      if (!(ev.event_req || '').trim()) {
+        if (evType === 'destination_lighthouse') ev.event_req = 'dest=lighthouse';
+        else if (evType === 'destination_demon') ev.event_req = 'dest=demon';
+      }
+      return ev;
+    });
     return {
       intro,
-      events: randomRows.map(rowToEvent),
+      events,
     };
   } catch (e) {
     console.warn('[SheetLoader] Fetch failed:', e.message);
