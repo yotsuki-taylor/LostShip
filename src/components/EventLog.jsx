@@ -2,7 +2,7 @@ import React from 'react';
 
 export function EventLog({ entries }) {
   return (
-    <div className="terminal-panel p-3 font-mono flex flex-col h-full min-h-[200px]">
+    <div className="terminal-panel p-3 font-mono flex flex-col h-full min-h-[200px] mb-2">
       <div className="text-amber-500/90 text-sm font-semibold mb-2 border-b border-zinc-600 pb-1">
         [ ЛОГ СОБЫТИЙ ]
       </div>

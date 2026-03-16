@@ -23,7 +23,7 @@ export function ShipDisplay({ isWarping = false, onWarpEnd }) {
   }, [isWarping, onWarpEnd]);
 
   return (
-    <div className="mb-4 relative overflow-hidden rounded-lg border-2 border-zinc-600 h-32 bg-black">
+    <div className="mb-2 relative overflow-hidden rounded-lg border-2 border-zinc-600 h-32 bg-black">
       {/* Чёрный космос */}
       <div className="absolute inset-0 bg-black" aria-hidden="true" />
 

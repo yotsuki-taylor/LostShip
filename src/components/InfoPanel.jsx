@@ -24,7 +24,7 @@ export function InfoPanel({ playerVars, resources }) {
   const resourceKeys = RESOURCE_UI_KEYS.filter((k) => resources[k] !== undefined);
 
   return (
-    <div className="terminal-panel p-3 font-mono mb-4">
+    <div className="terminal-panel p-3 font-mono mb-2">
       <table className="w-full text-left text-sm">
         <tbody>
           {STATUS_ITEMS.map(({ key, label }) => {

@@ -493,7 +493,7 @@ export default function App() {
     <>
       <audio ref={audioRef} src={MUSIC_PATH} loop preload="auto" muted={!musicEnabled} />
       <div className="min-h-screen bg-zinc-950 text-zinc-300 font-mono p-4">
-      <header className="mb-4 flex justify-between items-center">
+      <header className="mb-2 flex justify-between items-center">
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -501,13 +501,13 @@ export default function App() {
               saveGame({ resources, turn, eventLog, stormProgress, playerVars, crew: gameCrew, mapState: mapState ? serializeMapState(mapState) : null });
               setShowMenu(true);
             }}
-            className="p-2 rounded border border-zinc-600 bg-zinc-800/50 hover:border-amber-500 hover:bg-zinc-700/50 transition-colors"
+            className="p-1.5 rounded border-2 border-zinc-600 bg-zinc-800/50 hover:border-amber-500 hover:bg-zinc-700/50 transition-colors"
             aria-label="Меню"
           >
-            <span className="flex flex-col gap-1">
-              <span className="block w-5 h-0.5 bg-zinc-400 rounded" />
-              <span className="block w-5 h-0.5 bg-zinc-400 rounded" />
-              <span className="block w-5 h-0.5 bg-zinc-400 rounded" />
+            <span className="flex flex-col gap-0.5">
+              <span className="block w-4 h-0.5 bg-zinc-400 rounded" />
+              <span className="block w-4 h-0.5 bg-zinc-400 rounded" />
+              <span className="block w-4 h-0.5 bg-zinc-400 rounded" />
             </span>
           </button>
           <p className="text-xs text-zinc-500">Ход: {turn}</p>
@@ -517,7 +517,7 @@ export default function App() {
         )}
       </header>
 
-      <div className="mb-4 terminal-panel p-3">
+      <div className="mb-2 terminal-panel p-3">
         <div className="text-cyan-500/90 text-sm font-semibold mb-2">
           Курс на {playerVars.dest === 'demon' ? 'поиски демона' : playerVars.dest === 'market' ? 'Мир-Рынок' : playerVars.dest === 'lighthouse' ? 'Планарный Маяк' : '—'}
         </div>
@@ -543,7 +543,7 @@ export default function App() {
 
       <EventLog entries={eventLog} />
 
-      <div className="mb-4 flex justify-between gap-4">
+      <div className="mb-2 flex justify-between gap-4">
         <button
           type="button"
           disabled={isEventActive || isWarping}
