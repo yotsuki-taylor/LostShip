@@ -21,20 +21,29 @@ export function MapPopup({ mapState, onNodeClick, onClose }) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="text-amber-500/90 text-sm font-semibold mb-4 border-b border-zinc-600 pb-2">
-          [ КАРТА ЗВЁЗДНОГО ПУТИ ]
+          [ КАРТА ПЛАНАРНОГО ПУТИ ]
         </div>
         <MapView mapState={mapState} onNodeClick={onNodeClick} />
         <div className="mt-4 pt-3 border-t border-zinc-600 flex flex-wrap gap-6 text-xs text-zinc-400">
           <span className="flex items-center gap-2">
-            <span className="inline-block w-4 h-4 rounded-full bg-emerald-500/50 border-2 border-emerald-500" />
+            <span
+              className="inline-block w-4 h-4 rounded-full border-2"
+              style={{ backgroundColor: 'rgba(34, 197, 94, 0.5)', borderColor: 'rgb(34, 197, 94)' }}
+            />
             Исследовано
           </span>
           <span className="flex items-center gap-2">
-            <span className="inline-block w-5 h-5 rounded-full bg-amber-500 border-2 border-amber-600" />
+            <span
+              className="inline-block w-5 h-5 rounded-full border-2"
+              style={{ backgroundColor: 'rgb(251, 191, 36)', borderColor: 'rgb(245, 158, 11)' }}
+            />
             Актуальная локация
           </span>
           <span className="flex items-center gap-2">
-            <span className="inline-block w-4 h-4 rounded-full bg-amber-500/40 border-2 border-amber-500 border-dashed" />
+            <span
+              className="inline-block w-4 h-4 rounded-full border-2 border-dashed"
+              style={{ backgroundColor: 'rgba(251, 191, 36, 0.4)', borderColor: 'rgb(251, 191, 36)' }}
+            />
             Доступно для прыжка
           </span>
         </div>
