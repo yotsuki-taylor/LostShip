@@ -1,7 +1,7 @@
 import React from 'react';
 import { NODE_STATUS, getNodeStatus, getReachableNodeIds } from '../utils/mapUtils';
 
-const NODE_RADIUS = 12;
+const NODE_RADIUS = 24;
 const PADDING = 80;
 
 /**

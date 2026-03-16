@@ -23,10 +23,21 @@ export function MapPopup({ mapState, onNodeClick, onClose }) {
         <div className="text-amber-500/90 text-sm font-semibold mb-4 border-b border-zinc-600 pb-2">
           [ КАРТА ЗВЁЗДНОГО ПУТИ ]
         </div>
-        <p className="text-zinc-500 text-xs mb-3">
-          Выберите узел для прыжка (подсвечены жёлтым)
-        </p>
         <MapView mapState={mapState} onNodeClick={onNodeClick} />
+        <div className="mt-4 pt-3 border-t border-zinc-600 flex flex-wrap gap-6 text-xs text-zinc-400">
+          <span className="flex items-center gap-2">
+            <span className="inline-block w-4 h-4 rounded-full bg-emerald-500/50 border-2 border-emerald-500" />
+            Исследовано
+          </span>
+          <span className="flex items-center gap-2">
+            <span className="inline-block w-5 h-5 rounded-full bg-amber-500 border-2 border-amber-600" />
+            Актуальная локация
+          </span>
+          <span className="flex items-center gap-2">
+            <span className="inline-block w-4 h-4 rounded-full bg-amber-500/40 border-2 border-amber-500 border-dashed" />
+            Доступно для прыжка
+          </span>
+        </div>
       </div>
     </div>
   );
