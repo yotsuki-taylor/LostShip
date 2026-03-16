@@ -195,14 +195,12 @@ export default function App() {
     const nextCrew = passiveApplied.crew;
     const afterPassiveResources = passiveApplied.resources;
     const tickResources = applyDeltas(afterPassiveResources, { energy: 2 }, limits);
-    const newTurn = turn + 1;
     const stormGain = isReturnToVisited ? 0 : FIXED_SPEED;
     const newStormProgress = Math.min(100, stormProgress + stormGain);
 
     setMapState(nextMapState);
     setGameCrew(nextCrew);
     setResources(tickResources);
-    setTurn(newTurn);
 
     const willShowEvent = events.length > 0 && !reachedExit && !isReturnToVisited;
     if (reachedExit || !willShowEvent) {
@@ -236,7 +234,7 @@ export default function App() {
 
     saveGame({
       resources: tickResources,
-      turn: newTurn,
+      turn,
       eventLog: newEventLog,
       stormProgress: newStormProgress,
       playerVars,
