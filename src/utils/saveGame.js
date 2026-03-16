@@ -32,6 +32,7 @@ export function saveGame(state) {
       stormProgress: state.stormProgress,
       playerVars: state.playerVars ?? {},
       crew: state.crew ?? [],
+      mapState: state.mapState ?? null,
     };
     localStorage.setItem(SAVE_KEY, JSON.stringify(data));
     return true;

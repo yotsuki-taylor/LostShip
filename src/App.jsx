@@ -2,6 +2,7 @@ import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react'
 import { ENERGY_REGEN_PER_TURN } from './data/events';
 import { getResourceLimits, getResourceLabels, RESOURCE_UNITS, DELTA_KEYS, STATUS_VAR_KEYS, applyDeltas, applyDifficultyToDeltas, normalizeDeltaToNewFormat, FIXED_SPEED, FIXED_ATTACK } from './utils/resourceHelpers';
 import { saveGame, loadGame, hasSave, clearSave, migrateResources } from './utils/saveGame';
+import { createInitialMapState, performJump, serializeMapState, deserializeMapState, isExitNode } from './utils/mapUtils';
 import { matchesEventReq, pickCrewNames } from './services/sheetLoader';
 import { useSheetData } from './hooks/useSheetData';
 import { DEFAULT_SHIP_STATS } from './services/sheetLoader';
@@ -131,6 +132,10 @@ export default function App() {
   const [showCrewPopup, setShowCrewPopup] = useState(false);
   const [gameCrew, setGameCrew] = useState([]);
   const [pendingCrewInit, setPendingCrewInit] = useState(false);
+  const [mapState, setMapState] = useState(null);
+  const [isWarping, setIsWarping] = useState(false);
+  const [pendingStormProgress, setPendingStormProgress] = useState(null);
+  const pendingJumpRef = useRef(null);
 
   const limits = useMemo(() => getResourceLimits(), []);
 
@@ -165,43 +170,80 @@ export default function App() {
     return pool[Math.floor(Math.random() * pool.length)];
   }, [events, playerVars]);
 
-  const handleWait = useCallback(() => {
-    if (isEventActive || isGameOver || isVictory) return;
+  const handleMapNodeClick = useCallback(
+    (targetNodeId) => {
+      if (isEventActive || isGameOver || isVictory || !mapState) return;
+      pendingJumpRef.current = targetNodeId;
+      setShowMapPopup(false);
+      setIsWarping(true);
+    },
+    [isEventActive, isGameOver, isVictory, mapState]
+  );
 
-    const roll = Math.random();
-    const isFirstClick = turn === 0;
-    const gotEvent = isFirstClick || roll < 0.7;
+  const handleWarpEnd = useCallback(() => {
+    const targetNodeId = pendingJumpRef.current;
+    pendingJumpRef.current = null;
+    setIsWarping(false);
+    if (targetNodeId == null || !mapState) return;
 
+    const reachedExit = isExitNode(mapState.nodes, targetNodeId);
+    const nextMapState = reachedExit ? createInitialMapState() : performJump(mapState, targetNodeId);
+    if (!nextMapState) return;
+
+    const isReturnToVisited = !reachedExit && mapState.visitedIds?.has(targetNodeId);
     const passiveApplied = applyPassiveCrewEffects(gameCrew, resources, limits);
     const nextCrew = passiveApplied.crew;
     const afterPassiveResources = passiveApplied.resources;
     const tickResources = applyDeltas(afterPassiveResources, { energy: 2 }, limits);
+    const newTurn = turn + 1;
+    const stormGain = isReturnToVisited ? 0 : FIXED_SPEED;
+    const newStormProgress = Math.min(100, stormProgress + stormGain);
+
+    setMapState(nextMapState);
     setGameCrew(nextCrew);
     setResources(tickResources);
-    setTurn((t) => t + 1);
+    setTurn(newTurn);
 
-    if (gotEvent && events.length > 0) {
+    const willShowEvent = events.length > 0 && !reachedExit && !isReturnToVisited;
+    if (reachedExit || !willShowEvent) {
+      setStormProgress(newStormProgress);
+    } else {
+      setPendingStormProgress(newStormProgress);
+    }
+
+    const calmDelta = formatDeltaForLog({ energy: 2 });
+    const stormStr = stormGain > 0 ? ` | Путь: +${stormGain}%` : '';
+    const jumpMsg = reachedExit
+      ? `Переход в следующий кластер.${calmDelta}${stormStr}`
+      : isReturnToVisited
+        ? `Возврат к узлу ${targetNodeId}.${calmDelta}`
+        : `Прыжок к узлу ${targetNodeId}.${calmDelta}${stormStr}`;
+    const newEventLog = [...eventLog.slice(-5), jumpMsg].slice(-5);
+
+    setEventLog(newEventLog);
+
+    if (willShowEvent) {
       const event = pickRandomEvent();
       if (event) {
         setCurrentEvent(event);
         setIsEventActive(true);
       } else {
         setEventLog((prev) => [...prev.slice(-5), '[Ошибка: не удалось выбрать событие]']);
+        setStormProgress(newStormProgress);
+        setPendingStormProgress(null);
       }
-    } else {
-      const calmDelta = formatDeltaForLog({ energy: 2 });
-      const newLog = [...eventLog.slice(-5), (gotEvent ? '[Ошибка: нет событий]' : 'В буре затишье. Системы стабильны.') + calmDelta].slice(-5);
-      setEventLog(newLog);
-      saveGame({
-        resources: tickResources,
-        turn: turn + 1,
-        eventLog: newLog,
-        stormProgress,
-        playerVars,
-        crew: nextCrew,
-      });
     }
-  }, [isEventActive, isGameOver, isVictory, limits, turn, resources, eventLog, stormProgress, playerVars, gameCrew, events, pickRandomEvent]);
+
+    saveGame({
+      resources: tickResources,
+      turn: newTurn,
+      eventLog: newEventLog,
+      stormProgress: newStormProgress,
+      playerVars,
+      crew: nextCrew,
+      mapState: serializeMapState(nextMapState),
+    });
+  }, [mapState, gameCrew, resources, limits, turn, stormProgress, playerVars, events, pickRandomEvent, eventLog]);
 
   const handleChoice = useCallback(
     (choiceOrIndex) => {
@@ -241,15 +283,16 @@ export default function App() {
       const afterRegen = applyDeltas(afterChoice, { energy: ENERGY_REGEN_PER_TURN }, limits);
       setResources(afterRegen);
 
-      const stormGain = FIXED_SPEED;
-      setStormProgress((p) => Math.min(100, p + stormGain));
+      if (pendingStormProgress != null) {
+        setStormProgress(pendingStormProgress);
+        setPendingStormProgress(null);
+      }
 
       const riskSuffix = riskOutcome ? ` (${riskOutcome === 'success' ? 'успех' : 'провал'})` : '';
       const deltaStr = formatDeltaForLog(finalDelta, { energy: ENERGY_REGEN_PER_TURN });
-      const stormStr = stormGain > 0 ? ` | Путь: +${stormGain}%` : '';
       setEventLog((prev) => [
         ...prev.slice(-5),
-        `Ход ${turn + 1}: ${currentEvent.title} → "${choice.text}"${riskSuffix}${deltaStr}${stormStr}`,
+        `Ход ${turn + 1}: ${currentEvent.title} → "${choice.text}"${riskSuffix}${deltaStr}`,
       ].slice(-5));
 
       setTurn((t) => t + 1);
@@ -260,8 +303,8 @@ export default function App() {
       const isDead = (afterRegen.hull ?? 0) <= 0;
       if (!isDead) {
         const newTurn = turn + 1;
-        const newStormProgress = Math.min(100, stormProgress + stormGain);
-        const newEventLog = [...eventLog, `Ход ${newTurn}: ${currentEvent.title} → "${choice.text}"${riskSuffix}${deltaStr}${stormStr}`].slice(-5);
+        const newStormProgress = pendingStormProgress ?? stormProgress;
+        const newEventLog = [...eventLog, `Ход ${newTurn}: ${currentEvent.title} → "${choice.text}"${riskSuffix}${deltaStr}`].slice(-5);
         saveGame({
           resources: afterRegen,
           turn: newTurn,
@@ -269,10 +312,11 @@ export default function App() {
           stormProgress: newStormProgress,
           playerVars: newPlayerVars,
           crew: gameCrew,
+          mapState: mapState ? serializeMapState(mapState) : null,
         });
       }
     },
-    [currentEvent, isProcessing, limits, resources, stormProgress, turn, eventLog, playerVars, gameCrew]
+    [currentEvent, isProcessing, limits, resources, stormProgress, pendingStormProgress, turn, eventLog, playerVars, gameCrew, mapState]
   );
 
   const handleIntroNext = useCallback(
@@ -295,6 +339,8 @@ export default function App() {
     const preparedCrew = rollInitialCrewDamage(pickCrewNames(crew));
     setGameCrew(preparedCrew);
     setPendingCrewInit(preparedCrew.length === 0);
+    setMapState(createInitialMapState());
+    setPendingStormProgress(null);
     setTurn(0);
     setEventLog([]);
     setCurrentEvent(null);
@@ -313,6 +359,8 @@ export default function App() {
     setResources(withFixedShipStats(migrateResources(saved.resources) ?? shipStats ?? DEFAULT_SHIP_STATS));
     setGameCrew(saved.crew ?? []);
     setPendingCrewInit(false);
+    setMapState(deserializeMapState(saved.mapState) ?? createInitialMapState());
+    setPendingStormProgress(null);
     setTurn(saved.turn ?? 0);
     setEventLog((saved.eventLog ?? []).slice(-5));
     setCurrentEvent(null);
@@ -330,6 +378,8 @@ export default function App() {
     setResources(withFixedShipStats(shipStats ?? DEFAULT_SHIP_STATS));
     setGameCrew([]);
     setPendingCrewInit(false);
+    setMapState(createInitialMapState());
+    setPendingStormProgress(null);
     setTurn(0);
     setEventLog([]);
     setCurrentEvent(null);
@@ -434,7 +484,7 @@ export default function App() {
         <p className="text-xs text-zinc-500 mt-1 tabular-nums">{stormProgress}%</p>
       </div>
 
-      <ShipDisplay />
+      <ShipDisplay isWarping={isWarping} onWarpEnd={handleWarpEnd} />
 
       <InfoPanel playerVars={playerVars} resources={resources} />
 
@@ -450,8 +500,12 @@ export default function App() {
       <div className="mb-4 flex justify-between gap-4">
         <button
           type="button"
-          onClick={() => setShowMapPopup(true)}
-          className="flex-1 py-3 rounded border-2 border-zinc-600 bg-zinc-800/50 font-mono text-zinc-300 hover:border-amber-500 hover:text-amber-400 transition-colors"
+          disabled={isEventActive || isWarping}
+          onClick={() => {
+            if (!mapState) setMapState(createInitialMapState());
+            setShowMapPopup(true);
+          }}
+          className="flex-1 py-3 rounded border-2 border-zinc-600 bg-zinc-800/50 font-mono text-zinc-300 hover:border-amber-500 hover:text-amber-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-zinc-600 disabled:hover:text-zinc-300"
         >
           Карта
         </button>
@@ -464,18 +518,13 @@ export default function App() {
         </button>
       </div>
 
-      <div className="mb-4 flex justify-center">
-        <button
-          type="button"
-          disabled={isEventActive}
-          onClick={handleWait}
-          className="px-12 py-4 rounded-lg border-2 border-amber-600 bg-amber-900/30 font-bold text-amber-400 text-lg tracking-wider hover:bg-amber-800/40 hover:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-amber-900/30 transition-colors"
-        >
-          {isEventActive ? 'ОЖИДАНИЕ РЕШЕНИЯ...' : 'ПРОДОЛЖИТЬ ПУТЬ'}
-        </button>
-      </div>
-
-      {showMapPopup && <MapPopup onClose={() => setShowMapPopup(false)} />}
+      {showMapPopup && mapState && (
+        <MapPopup
+          mapState={mapState}
+          onNodeClick={handleMapNodeClick}
+          onClose={() => setShowMapPopup(false)}
+        />
+      )}
       {showCrewPopup && <CrewPopup crew={gameCrew} onClose={() => setShowCrewPopup(false)} />}
     </div>
     </>

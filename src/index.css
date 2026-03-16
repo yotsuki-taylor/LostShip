@@ -21,3 +21,82 @@ body {
 .animate-ship-bob {
   animation: ship-bob 2.5s ease-in-out infinite;
 }
+
+/* Варп-анимация: scale 1→0, пауза, scale 0→1 + blur/brightness при уходе в подпространство */
+@keyframes ship-warp {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+    filter: blur(0) brightness(1);
+  }
+  25% {
+    transform: scale(0);
+    opacity: 0.2;
+    filter: blur(12px) brightness(2.5);
+  }
+  50% {
+    transform: scale(0);
+    opacity: 0.1;
+    filter: blur(16px) brightness(3);
+  }
+  75% {
+    transform: scale(1);
+    opacity: 1;
+    filter: blur(0) brightness(1);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+    filter: blur(0) brightness(1);
+  }
+}
+
+.animate-ship-warp {
+  animation: ship-warp 1s ease-in-out forwards;
+}
+
+/* Вспышка при варпе */
+@keyframes warp-flash {
+  0% {
+    transform: scale(0.3);
+    opacity: 0;
+  }
+  20% {
+    transform: scale(1.2);
+    opacity: 0.9;
+  }
+  40% {
+    transform: scale(1.5);
+    opacity: 0.4;
+  }
+  60% {
+    transform: scale(1.8);
+    opacity: 0.1;
+  }
+  100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+
+.animate-warp-flash {
+  animation: warp-flash 1s ease-out forwards;
+  pointer-events: none;
+}
+
+/* Частицы вспышки — разлёт от центра */
+@keyframes warp-particle-out {
+  0% {
+    transform: translate(-50%, -50%) translate(0, 0) scale(1);
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate(-50%, -50%) translate(var(--px, 40px), var(--py, 0)) scale(0.2);
+    opacity: 0;
+  }
+}
+
+.animate-warp-particle {
+  animation: warp-particle-out 0.6s ease-out forwards;
+  pointer-events: none;
+}
