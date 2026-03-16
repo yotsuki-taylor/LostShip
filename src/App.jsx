@@ -40,6 +40,22 @@ function formatDeltaForLog(delta, extra = {}) {
 }
 
 const MUSIC_PATH = '/LostShip/sound/maintheme.mp3';
+const MUSIC_PREF_KEY = 'lost-ship-music';
+
+function getMusicEnabled() {
+  try {
+    const v = localStorage.getItem(MUSIC_PREF_KEY);
+    return v === null ? true : v === '1';
+  } catch {
+    return true;
+  }
+}
+
+function saveMusicPreference(enabled) {
+  try {
+    localStorage.setItem(MUSIC_PREF_KEY, enabled ? '1' : '0');
+  } catch {}
+}
 
 function withFixedShipStats(resources) {
   return { ...resources, speed: FIXED_SPEED, attack: FIXED_ATTACK };
@@ -135,12 +151,21 @@ export default function App() {
   const [mapState, setMapState] = useState(null);
   const [isWarping, setIsWarping] = useState(false);
   const [pendingStormProgress, setPendingStormProgress] = useState(null);
+  const [musicEnabled, setMusicEnabled] = useState(getMusicEnabled);
   const pendingJumpRef = useRef(null);
 
   const limits = useMemo(() => getResourceLimits(), []);
 
+  const handleMusicToggle = useCallback(() => {
+    setMusicEnabled((prev) => {
+      const next = !prev;
+      saveMusicPreference(next);
+      return next;
+    });
+  }, []);
+
   useEffect(() => {
-    if (!showMenu && audioRef.current) {
+    if (audioRef.current) {
       audioRef.current.play().catch(() => {});
     }
   }, [showMenu]);
@@ -392,12 +417,14 @@ export default function App() {
   if (showMenu) {
     return (
       <>
-        <audio ref={audioRef} src={MUSIC_PATH} loop preload="auto" />
+        <audio ref={audioRef} src={MUSIC_PATH} loop preload="auto" muted={!musicEnabled} />
         <StartMenu
-        onNewGame={handleNewGame}
-        onContinue={handleContinue}
-        hasSave={hasSave()}
-      />
+          onNewGame={handleNewGame}
+          onContinue={handleContinue}
+          hasSave={hasSave()}
+          musicEnabled={musicEnabled}
+          onMusicToggle={handleMusicToggle}
+        />
       </>
     );
   }
@@ -405,7 +432,7 @@ export default function App() {
   if (introStep < introSlides.length) {
     return (
       <>
-        <audio ref={audioRef} src={MUSIC_PATH} loop preload="auto" />
+        <audio ref={audioRef} src={MUSIC_PATH} loop preload="auto" muted={!musicEnabled} />
         <div className="min-h-screen bg-zinc-950">
         <IntroPopup
           slide={introSlides[introStep]}
@@ -419,7 +446,7 @@ export default function App() {
   if (isGameOver) {
     return (
       <>
-        <audio ref={audioRef} src={MUSIC_PATH} loop preload="auto" />
+        <audio ref={audioRef} src={MUSIC_PATH} loop preload="auto" muted={!musicEnabled} />
         <div className="min-h-screen bg-zinc-950 text-zinc-300 font-mono flex flex-col items-center justify-center p-8">
         <h2 className="text-2xl font-bold text-red-500 mb-4">Корабль потерян в пустоте</h2>
         <p className="text-zinc-400 mb-6 text-center">
@@ -440,7 +467,7 @@ export default function App() {
   if (isVictory) {
     return (
       <>
-        <audio ref={audioRef} src={MUSIC_PATH} loop preload="auto" />
+        <audio ref={audioRef} src={MUSIC_PATH} loop preload="auto" muted={!musicEnabled} />
         <div className="min-h-screen bg-zinc-950 text-zinc-300 font-mono flex flex-col items-center justify-center p-8">
         <h2 className="text-2xl font-bold text-emerald-500 mb-4">Победа!</h2>
         <p className="text-zinc-400 mb-6 text-center">
@@ -460,10 +487,27 @@ export default function App() {
 
   return (
     <>
-      <audio ref={audioRef} src={MUSIC_PATH} loop preload="auto" />
+      <audio ref={audioRef} src={MUSIC_PATH} loop preload="auto" muted={!musicEnabled} />
       <div className="min-h-screen bg-zinc-950 text-zinc-300 font-mono p-4">
       <header className="mb-4 flex justify-between items-center">
-        <p className="text-xs text-zinc-500">Ход: {turn}</p>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              saveGame({ resources, turn, eventLog, stormProgress, playerVars, crew: gameCrew, mapState: mapState ? serializeMapState(mapState) : null });
+              setShowMenu(true);
+            }}
+            className="p-2 rounded border border-zinc-600 bg-zinc-800/50 hover:border-amber-500 hover:bg-zinc-700/50 transition-colors"
+            aria-label="Меню"
+          >
+            <span className="flex flex-col gap-1">
+              <span className="block w-5 h-0.5 bg-zinc-400 rounded" />
+              <span className="block w-5 h-0.5 bg-zinc-400 rounded" />
+              <span className="block w-5 h-0.5 bg-zinc-400 rounded" />
+            </span>
+          </button>
+          <p className="text-xs text-zinc-500">Ход: {turn}</p>
+        </div>
         {fromSheet && (
           <span className="text-xs text-emerald-500/80">Таблица подключена</span>
         )}
