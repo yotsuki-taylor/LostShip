@@ -189,6 +189,10 @@ export default function App() {
   const isGameOver = (resources.hull ?? 0) <= 0;
   const isVictory = stormProgress >= 100;
 
+  useEffect(() => {
+    if (isGameOver) clearSave();
+  }, [isGameOver]);
+
   const pickRandomEvent = useCallback(() => {
     const eligible = events.filter((e) => matchesEventReq(e.event_req, playerVars));
     const pool = eligible.length > 0 ? eligible : events;

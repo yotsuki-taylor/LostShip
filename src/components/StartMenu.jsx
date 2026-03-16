@@ -12,23 +12,23 @@ export function StartMenu({ onNewGame, onContinue, hasSave, musicEnabled, onMusi
       <p className="text-zinc-500 text-sm mb-12 text-center max-w-md">Там, где гаснет свет миров, начинается твой путь сквозь планарный хаос</p>
 
       <div className="flex flex-col gap-4 w-full max-w-xs">
-        <button
-          type="button"
-          onClick={onNewGame}
-          className="px-8 py-3 rounded-lg border-2 border-amber-600 bg-amber-900/30 font-bold text-amber-400 hover:bg-amber-800/40 hover:border-amber-500 transition-colors"
-        >
-          НАЧАТЬ ИГРУ
-        </button>
-
         {hasSave && (
           <button
             type="button"
             onClick={onContinue}
-            className="px-8 py-3 rounded-lg border-2 border-zinc-600 bg-zinc-800/50 font-semibold text-zinc-300 hover:bg-zinc-700/50 hover:border-zinc-500 transition-colors"
+            className="px-8 py-3 rounded-lg border-2 border-amber-600 bg-amber-900/30 font-bold text-amber-400 hover:bg-amber-800/40 hover:border-amber-500 transition-colors"
           >
             ПРОДОЛЖИТЬ
           </button>
         )}
+
+        <button
+          type="button"
+          onClick={onNewGame}
+          className="px-8 py-3 rounded-lg border-2 border-zinc-600 bg-zinc-800/50 font-semibold text-zinc-300 hover:bg-zinc-700/50 hover:border-zinc-500 transition-colors"
+        >
+          НАЧАТЬ ИГРУ
+        </button>
 
         <label className="relative flex items-center justify-end px-6 py-3 rounded-lg border-2 border-zinc-600 bg-zinc-800/50 cursor-pointer font-semibold text-zinc-300 hover:bg-zinc-700/50 hover:border-zinc-500 transition-colors w-full max-w-xs">
           <input

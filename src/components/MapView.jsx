@@ -97,7 +97,10 @@ export function MapView({ mapState, onNodeClick }) {
               aria-label={status === NODE_STATUS.CURRENT ? 'Текущая позиция' : status === NODE_STATUS.REACHABLE ? `Прыгнуть к узлу ${node.id}` : undefined}
             />
             {status === NODE_STATUS.CURRENT && (
-              <circle cx={cx} cy={cy} r={r + 4} fill="none" stroke="rgba(251, 191, 36, 0.5)" strokeWidth="2" className="animate-pulse" />
+              <>
+                <circle cx={cx} cy={cy} r={r * 0.4} fill="rgb(39, 39, 42)" />
+                <circle cx={cx} cy={cy} r={r + 4} fill="none" stroke="rgba(251, 191, 36, 0.5)" strokeWidth="2" className="animate-pulse" />
+              </>
             )}
           </g>
         );

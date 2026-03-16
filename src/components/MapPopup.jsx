@@ -33,17 +33,24 @@ export function MapPopup({ mapState, onNodeClick, onClose }) {
             Исследовано
           </span>
           <span className="flex items-center gap-2">
-            <span
-              className="inline-block w-5 h-5 rounded-full border-2"
-              style={{ backgroundColor: 'rgb(251, 191, 36)', borderColor: 'rgb(245, 158, 11)' }}
-            />
+            <svg width="20" height="20" viewBox="0 0 52 52" className="shrink-0">
+              <circle cx="26" cy="26" r="24" fill="rgb(251, 191, 36)" stroke="rgb(245, 158, 11)" strokeWidth="2" />
+              <circle cx="26" cy="26" r="9.6" fill="rgb(39, 39, 42)" />
+            </svg>
             Актуальная локация
           </span>
           <span className="flex items-center gap-2">
-            <span
-              className="inline-block w-4 h-4 rounded-full border-2 border-dashed"
-              style={{ backgroundColor: 'rgba(251, 191, 36, 0.4)', borderColor: 'rgb(251, 191, 36)' }}
-            />
+            <svg width="16" height="16" className="shrink-0">
+              <circle
+                cx="8"
+                cy="8"
+                r="6"
+                fill="rgba(251, 191, 36, 0.4)"
+                stroke="rgb(251, 191, 36)"
+                strokeWidth="2"
+                strokeDasharray="4 2"
+              />
+            </svg>
             Доступно для прыжка
           </span>
         </div>
