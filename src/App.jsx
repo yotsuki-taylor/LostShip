@@ -1,5 +1,4 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import { ENERGY_REGEN_PER_TURN } from './data/events';
 import { getResourceLimits, getResourceLabels, RESOURCE_UNITS, DELTA_KEYS, STATUS_VAR_KEYS, applyDeltas, applyDifficultyToDeltas, normalizeDeltaToNewFormat, FIXED_SPEED, FIXED_ATTACK } from './utils/resourceHelpers';
 import { saveGame, loadGame, hasSave, clearSave, migrateResources } from './utils/saveGame';
 import { createInitialMapState, performJump, serializeMapState, deserializeMapState, isExitNode } from './utils/mapUtils';
@@ -85,6 +84,27 @@ function rollInitialCrewDamage(rawCrew) {
       status: getCrewStatusFromHp(nextHp),
     };
   });
+}
+
+/** Распределяет урон по корпусу (hull: -N) случайным образом между живыми членами команды */
+function distributeHullDamageToCrew(crew, hullDamageAmount) {
+  if (hullDamageAmount <= 0 || !crew?.length) return crew;
+  let nextCrew = crew.map((m) => ({ ...m, hp: m.hp ?? 0 }));
+  for (let i = 0; i < hullDamageAmount; i++) {
+    const aliveIndices = nextCrew
+      .map((m, idx) => ((m.hp ?? 0) > 0 ? idx : -1))
+      .filter((idx) => idx >= 0);
+    if (aliveIndices.length === 0) break;
+    const idx = aliveIndices[Math.floor(Math.random() * aliveIndices.length)];
+    const m = nextCrew[idx];
+    const nextHp = Math.max(0, m.hp - 1);
+    nextCrew = [
+      ...nextCrew.slice(0, idx),
+      { ...m, hp: nextHp, status: getCrewStatusFromHp(nextHp) },
+      ...nextCrew.slice(idx + 1),
+    ];
+  }
+  return nextCrew;
 }
 
 function applyPassiveCrewEffects(rawCrew, currentResources, limits) {
@@ -223,7 +243,7 @@ export default function App() {
     const passiveApplied = applyPassiveCrewEffects(gameCrew, resources, limits);
     const nextCrew = passiveApplied.crew;
     const afterPassiveResources = passiveApplied.resources;
-    const tickResources = applyDeltas(afterPassiveResources, { energy: 2 }, limits);
+    const tickResources = applyDeltas(afterPassiveResources, {}, limits);
     const stormGain = isReturnToVisited ? 0 : FIXED_SPEED;
     const newStormProgress = Math.min(100, stormProgress + stormGain);
 
@@ -238,7 +258,7 @@ export default function App() {
       setPendingStormProgress(newStormProgress);
     }
 
-    const calmDelta = formatDeltaForLog({ energy: 2 });
+    const calmDelta = formatDeltaForLog({});
     const stormStr = stormGain > 0 ? ` | Путь: +${stormGain}%` : '';
     const jumpMsg = reachedExit
       ? `Переход в следующий кластер.${calmDelta}${stormStr}`
@@ -304,11 +324,14 @@ export default function App() {
       const difficultyMultiplier = stormProgress > 50 ? 1.2 : 1;
       const finalDelta = applyDifficultyToDeltas(resourceDelta, difficultyMultiplier);
 
+      const hullDamage = (finalDelta.hull ?? 0) < 0 ? Math.abs(Math.round(finalDelta.hull)) : 0;
+      const nextCrew = hullDamage > 0 ? distributeHullDamageToCrew(gameCrew, hullDamage) : gameCrew;
+
       const afterChoice = applyDeltas(resources, finalDelta, limits);
       const newPlayerVars = setVariable ? { ...playerVars, ...setVariable } : playerVars;
       if (setVariable) setPlayerVars(newPlayerVars);
-      const afterRegen = applyDeltas(afterChoice, { energy: ENERGY_REGEN_PER_TURN }, limits);
-      setResources(afterRegen);
+      setResources(afterChoice);
+      setGameCrew(nextCrew);
 
       if (pendingStormProgress != null) {
         setStormProgress(pendingStormProgress);
@@ -316,7 +339,7 @@ export default function App() {
       }
 
       const riskSuffix = riskOutcome ? ` (${riskOutcome === 'success' ? 'успех' : 'провал'})` : '';
-      const deltaStr = formatDeltaForLog(finalDelta, { energy: ENERGY_REGEN_PER_TURN });
+      const deltaStr = formatDeltaForLog(finalDelta);
       setEventLog((prev) => [
         ...prev.slice(-5),
         `Ход ${turn + 1}: ${currentEvent.title} → "${choice.text}"${riskSuffix}${deltaStr}`,
@@ -327,18 +350,18 @@ export default function App() {
       setIsEventActive(false);
       setIsProcessing(false);
 
-      const isDead = (afterRegen.hull ?? 0) <= 0;
+      const isDead = (afterChoice.hull ?? 0) <= 0;
       if (!isDead) {
         const newTurn = turn + 1;
         const newStormProgress = pendingStormProgress ?? stormProgress;
         const newEventLog = [...eventLog, `Ход ${newTurn}: ${currentEvent.title} → "${choice.text}"${riskSuffix}${deltaStr}`].slice(-5);
         saveGame({
-          resources: afterRegen,
+          resources: afterChoice,
           turn: newTurn,
           eventLog: newEventLog,
           stormProgress: newStormProgress,
           playerVars: newPlayerVars,
-          crew: gameCrew,
+          crew: nextCrew,
           mapState: mapState ? serializeMapState(mapState) : null,
         });
       }
@@ -546,21 +569,21 @@ export default function App() {
       <div className="mb-2 flex justify-between gap-4">
         <button
           type="button"
+          onClick={() => setShowCrewPopup(true)}
+          className="flex-1 py-3 rounded border-2 border-zinc-600 bg-zinc-800/50 font-mono text-zinc-300 hover:border-amber-500 hover:text-amber-400 transition-colors"
+        >
+          Команда
+        </button>
+        <button
+          type="button"
           disabled={isEventActive || isWarping}
           onClick={() => {
             if (!mapState) setMapState(createInitialMapState());
             setShowMapPopup(true);
           }}
-          className="flex-1 py-3 rounded border-2 border-zinc-600 bg-zinc-800/50 font-mono text-zinc-300 hover:border-amber-500 hover:text-amber-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-zinc-600 disabled:hover:text-zinc-300"
+          className="flex-1 py-3 rounded border-2 border-amber-600 bg-amber-900/30 font-mono font-bold text-amber-400 hover:bg-amber-800/40 hover:border-amber-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-amber-600 disabled:hover:bg-amber-900/30 disabled:hover:text-amber-400"
         >
-          Карта
-        </button>
-        <button
-          type="button"
-          onClick={() => setShowCrewPopup(true)}
-          className="flex-1 py-3 rounded border-2 border-zinc-600 bg-zinc-800/50 font-mono text-zinc-300 hover:border-amber-500 hover:text-amber-400 transition-colors"
-        >
-          Команда
+          Совершить прыжок
         </button>
       </div>
 

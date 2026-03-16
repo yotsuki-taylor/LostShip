@@ -49,9 +49,6 @@ function ensureAllResources(obj) {
 
 export const events = normalizeEvents(eventsJson);
 
-/** Базовая регенерация энергии за ход */
-export const ENERGY_REGEN_PER_TURN = 8;
-
 /** Минимальные/максимальные значения ресурсов */
 export const RESOURCE_LIMITS = {
   hull: { min: 0, max: 100 },
