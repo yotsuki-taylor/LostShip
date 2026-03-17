@@ -17,7 +17,7 @@
 | text | Текст ивента |
 | opt1_text | Текст варианта 1 |
 | opt1_req | Условия для показа варианта (опционально) |
-| opt1_consequences | Последствия: `{"hull": -10, "energy": 5}` или для риска: `{"chance": 0.5, "success": {...}, "failure": {...}}`. Для интро — `{"ship": "merchant"}` и т.п. (устанавливает переменную) |
+| opt1_consequences | Последствия: `{"hull": -10, "energy": 5}` или для риска: `{"chance": 0.5, "success": {...}, "failure": {...}}`. Для интро — `{"ship": "merchant"}` и т.п. В боевых ивентах (AirshipFight_*): `{"enemy_hp": -5}` или `{"enemy_damage": 5}` — урон врагу. |
 | opt2_text, opt2_req, opt2_consequences... | Аналогично для вариантов 2–4 |
 
 ## Интро (event=intro, id=1–4)
@@ -88,5 +88,10 @@
 | EndFightEvent | Ссылка на ивент при завершении боя (0 HP) |
 
 Запуск боя: в `opt_consequences` события укажите `{"fight": "id_врага"}`.
+
+**Урон врагу в боевых ивентах** (AirshipFight_1–5, во время боя): в `opt_consequences` добавьте `enemy_hp` или `enemy_damage`:
+- `{"enemy_hp": -5}` — враг получает 5 урона
+- `{"enemy_damage": 5}` — то же самое
+- Можно комбинировать: `{"hull": -3, "enemy_damage": 5}` — игрок −3 hull, враг −5 HP
 
 События в основной таблице могут использовать старый формат в `opt_consequences`: `hull`, `crew`, `stability`, `scrap`, `energy` — `crew` и `stability` маппятся в `morale`, `scrap` в `supplies`.

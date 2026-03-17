@@ -136,16 +136,19 @@ function parseNum(val) {
 }
 
 function splitConsequences(obj) {
-  if (!obj || typeof obj !== 'object') return { delta: {}, setVariable: null };
+  if (!obj || typeof obj !== 'object') return { delta: {}, setVariable: null, enemyDamage: undefined };
   const delta = {};
   const setVariable = {};
+  let enemyDamage;
   Object.entries(obj).forEach(([k, v]) => {
     const kLower = String(k).toLowerCase().trim();
     const numVal = parseNum(v);
     if (RESOURCE_KEYS.includes(kLower) && numVal !== null) delta[kLower] = numVal;
     else if (PLAYER_VAR_KEYS.includes(kLower)) setVariable[kLower] = typeof v === 'string' ? v : String(v);
+    else if (kLower === 'enemy_hp' && numVal !== null && numVal < 0) enemyDamage = Math.abs(numVal);
+    else if (kLower === 'enemy_damage' && numVal !== null && numVal > 0) enemyDamage = numVal;
   });
-  return { delta, setVariable: Object.keys(setVariable).length ? setVariable : null };
+  return { delta, setVariable: Object.keys(setVariable).length ? setVariable : null, enemyDamage };
 }
 
 function rowToEvent(row) {
@@ -171,14 +174,17 @@ function rowToEvent(row) {
         failure: { hull: 0, energy: 0, scrap: 0, crew: 0, stability: 0, ...fail.delta },
         successSetVariable: mergeSetVar(succ.setVariable),
         failureSetVariable: mergeSetVar(fail.setVariable),
+        successEnemyDamage: succ.enemyDamage ?? topLevel.enemyDamage,
+        failureEnemyDamage: fail.enemyDamage ?? topLevel.enemyDamage,
       };
     } else if (consequences) {
-      const { delta, setVariable } = splitConsequences(consequences);
+      const { delta, setVariable, enemyDamage } = splitConsequences(consequences);
       choice = {
         text,
         optReq,
         delta: { hull: 0, energy: 0, scrap: 0, crew: 0, stability: 0, ...delta },
         setVariable,
+        enemyDamage,
       };
     } else {
       choice = { text, optReq, delta: {} };

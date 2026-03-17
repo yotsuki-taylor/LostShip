@@ -190,6 +190,7 @@ export default function App() {
   const [enemyHp, setEnemyHp] = useState(0);
   const [combatEvent, setCombatEvent] = useState(null);
   const [pendingFightEnd, setPendingFightEnd] = useState(null);
+  const [pendingCombatAction, setPendingCombatAction] = useState(null);
   const [playerHitTrigger, setPlayerHitTrigger] = useState(0);
   const [enemyHitTrigger, setEnemyHitTrigger] = useState(0);
   const [screenShake, setScreenShake] = useState(false);
@@ -251,9 +252,9 @@ export default function App() {
   const pickNextEvent = useCallback(
     (nextDestId, shownSet, currentTurn) => {
       const dest = playerVars.dest;
-      if (currentTurn === 1) {
+      if (currentTurn === 1 && !shownSet.has(getEventKey({ event: 'random', id: 26 }))) {
         const ev26 = events.find((e) => (e?.event || '').toLowerCase() === 'random' && Number(e.id) === 26);
-        if (ev26 && matchesEventReq(ev26.event_req, playerVars)) return ev26; // тест боя: ивент 26 на 2-й ход
+        if (ev26 && matchesEventReq(ev26.event_req, playerVars)) return ev26; // тест боя: ивент 26 только на 2-й ход
       }
       const randomEvents = events.filter(
         (e) => (e?.event || '').toLowerCase() === 'random' && matchesEventReq(e.event_req, playerVars)
@@ -433,6 +434,11 @@ export default function App() {
           fightData = fights[0];
         }
         if (fightData) {
+          const enemyDamageFromChoice = riskOutcome != null
+            ? (riskOutcome === 'success' ? choice.successEnemyDamage : choice.failureEnemyDamage)
+            : choice.enemyDamage;
+          const initialEnemyHp = Math.max(0, fightData.hp - (enemyDamageFromChoice ?? 0));
+          if ((enemyDamageFromChoice ?? 0) > 0) setEnemyHitTrigger((t) => t + 1);
           const riskSuffix = riskOutcome ? ` (${riskOutcome === 'success' ? 'успех' : 'провал'})` : '';
           const deltaStr = formatDeltaForLog(finalDelta);
           setResources(afterChoice);
@@ -442,7 +448,7 @@ export default function App() {
           setIsProcessing(false);
           setCurrentFight(fightData);
           setCombatTurn(1);
-          setEnemyHp(fightData.hp);
+          setEnemyHp(initialEnemyHp);
           const newEventLog = [
             ...eventLog.slice(-5),
             `Ход ${turn + 1}: ${currentEvent.title} → "${choice.text}"${riskSuffix}${deltaStr}`,
@@ -461,7 +467,7 @@ export default function App() {
             shownEventIds,
             currentFight: fightData,
             combatTurn: 1,
-            enemyHp: fightData.hp,
+            enemyHp: initialEnemyHp,
           });
           return;
         }
@@ -528,6 +534,7 @@ export default function App() {
       setCombatTurn(0);
       setEnemyHp(0);
       setPendingFightEnd(null);
+      setPendingCombatAction(null);
       setCombatEvent(null);
       if (!win) {
         setEventLog((prev) => [...prev.slice(-5), 'Корабль уничтожен. Поражение.'].slice(-5));
@@ -601,14 +608,6 @@ export default function App() {
         combatTurn: nextTurn,
         enemyHp: newEnemyHp,
       });
-
-      // EventTurn_1 для хода 1, EventTurn_2 для хода 2 и т.д. 50% шанс после расчёта урона
-      const turnIndex = Math.min(combatTurn - 1, 4);
-      const turnEventRef = currentFight.eventTurns?.[turnIndex];
-      if (Math.random() < 0.5 && turnEventRef) {
-        const ev = findEventByIdOrTitle(turnEventRef);
-        if (ev) setCombatEvent(ev);
-      }
     },
     [currentFight, enemyHp, resources, combatTurn, eventLog, mapState, playerVars, turn, stormProgress, nextDestinationEventId, shownEventIds, findEventByIdOrTitle, finishCombat, gameCrew]
   );
@@ -645,10 +644,23 @@ export default function App() {
         return;
       }
 
+      // Сначала проверяем ивент (50%): если есть — показываем, урон применится после выбора
+      const turnIndex = Math.min(combatTurn - 1, 4);
+      const turnEventRef = currentFight.eventTurns?.[turnIndex];
+      if (Math.random() < 0.5 && turnEventRef) {
+        const ev = findEventByIdOrTitle(turnEventRef);
+        if (ev) {
+          setPendingCombatAction({ playerDamageDealt, playerDamageTaken, actionName });
+          setCombatEvent(ev);
+          setIsProcessing(false);
+          return;
+        }
+      }
+
       runCombatTurn(playerDamageDealt, playerDamageTaken, actionName);
       setIsProcessing(false);
     },
-    [currentFight, combatTurn, isProcessing, playerVars.demon, runCombatTurn]
+    [currentFight, combatTurn, isProcessing, playerVars.demon, runCombatTurn, findEventByIdOrTitle]
   );
 
   const handleCombatEventChoice = useCallback(
@@ -656,22 +668,103 @@ export default function App() {
       if (!combatEvent) return;
       const delta = choice?.delta ?? {};
       const setVariable = choice?.setVariable ?? {};
-      const hullDamage = (delta.hull ?? 0) < 0 ? Math.abs(Math.round(delta.hull)) : 0;
-      if (hullDamage > 0) setPlayerHitTrigger((t) => t + 1);
-      const nextCrew = hullDamage > 0 ? distributeHullDamageToCrew(gameCrew, hullDamage) : gameCrew;
-      const afterResources = applyDeltas(resources, delta, limits);
-      setResources(afterResources);
-      if (hullDamage > 0) setGameCrew(nextCrew);
+      const choiceEnemyDamage = choice?.enemyDamage ?? 0;
+      const choiceHullDamage = (delta.hull ?? 0) < 0 ? Math.abs(Math.round(delta.hull)) : 0;
+      let nextCrew = choiceHullDamage > 0 ? distributeHullDamageToCrew(gameCrew, choiceHullDamage) : gameCrew;
+      let afterResources = applyDeltas(resources, delta, limits);
       if (Object.keys(setVariable).length > 0) setPlayerVars((p) => ({ ...p, ...setVariable }));
-      setCombatEvent(null);
-      if (pendingFightEnd) {
-        finishCombat(pendingFightEnd.win);
-      } else if ((afterResources.hull ?? 0) <= 0) {
-        finishCombat(false);
-      }
+
       setEventLog((prev) => [...prev.slice(-5), `Бой: ${combatEvent.title} → "${choice?.text || 'Продолжить'}"`].slice(-5));
+      setCombatEvent(null);
+
+      const pending = pendingCombatAction;
+      setPendingCombatAction(null);
+
+      if (pending) {
+        const { playerDamageDealt, playerDamageTaken, actionName } = pending;
+        if (playerDamageTaken > 0 || choiceHullDamage > 0) setPlayerHitTrigger((t) => t + 1);
+        if (playerDamageDealt > 0 || choiceEnemyDamage > 0) setEnemyHitTrigger((t) => t + 1);
+
+        const combatHullDamage = Math.min(playerDamageTaken, afterResources.hull ?? 0);
+        const newHull = Math.max(0, (afterResources.hull ?? 0) - playerDamageTaken);
+        nextCrew = combatHullDamage > 0 ? distributeHullDamageToCrew(nextCrew, combatHullDamage) : nextCrew;
+        const totalEnemyDamage = playerDamageDealt + choiceEnemyDamage;
+        const newEnemyHp = Math.max(0, (enemyHp ?? 0) - totalEnemyDamage);
+
+        setResources({ ...afterResources, hull: newHull });
+        setGameCrew(nextCrew);
+        setEnemyHp(newEnemyHp);
+        setEventLog((prev) => [...prev.slice(-5), `Ход ${combatTurn}: ${actionName}. Вы нанесли ${playerDamageDealt} урона, получили ${playerDamageTaken} урона.`].slice(-5));
+
+        const combatEnded = newEnemyHp <= 0 || newHull <= 0;
+        if (combatEnded) {
+          const endEventRef = currentFight?.endFightEvent;
+          const endEvent = findEventByIdOrTitle(endEventRef);
+          const won = newEnemyHp <= 0;
+          setPendingFightEnd({ win: won, endEvent });
+          if (endEvent) {
+            setPlayerVars((prev) => ({ ...prev, fight: won ? 'win' : 'lose' }));
+            setCombatEvent(endEvent);
+          } else {
+            finishCombat(won);
+          }
+          saveGame({
+            resources: { ...afterResources, hull: newHull },
+            turn,
+            eventLog: [...eventLog.slice(-5), `Бой: ${combatEvent.title} → "${choice?.text || 'Продолжить'}"`, `Ход ${combatTurn}: ${actionName}. Вы нанесли ${playerDamageDealt} урона, получили ${playerDamageTaken} урона.`].slice(-5),
+            stormProgress,
+            playerVars: { ...playerVars, ...setVariable, fight: won ? 'win' : 'lose' },
+            crew: nextCrew,
+            mapState: mapState ? serializeMapState(mapState) : null,
+            nextDestinationEventId,
+            shownEventIds,
+            currentFight: endEvent ? currentFight : null,
+            combatTurn: 0,
+            enemyHp: 0,
+          });
+        } else {
+          const nextTurn = combatTurn + 1;
+          setCombatTurn(nextTurn);
+          saveGame({
+            resources: { ...afterResources, hull: newHull },
+            turn,
+            eventLog: [...eventLog.slice(-5), `Бой: ${combatEvent.title} → "${choice?.text || 'Продолжить'}"`, `Ход ${combatTurn}: ${actionName}. Вы нанесли ${playerDamageDealt} урона, получили ${playerDamageTaken} урона.`].slice(-5),
+            stormProgress,
+            playerVars: { ...playerVars, ...setVariable },
+            crew: nextCrew,
+            mapState: mapState ? serializeMapState(mapState) : null,
+            nextDestinationEventId,
+            shownEventIds,
+            currentFight,
+            combatTurn: nextTurn,
+            enemyHp: newEnemyHp,
+          });
+        }
+      } else {
+        if (choiceHullDamage > 0) setPlayerHitTrigger((t) => t + 1);
+        if (choiceEnemyDamage > 0) setEnemyHitTrigger((t) => t + 1);
+        setResources(afterResources);
+        if (choiceHullDamage > 0) setGameCrew(nextCrew);
+        const newEnemyHp = Math.max(0, (enemyHp ?? 0) - choiceEnemyDamage);
+        setEnemyHp(newEnemyHp);
+        if (pendingFightEnd) {
+          finishCombat(pendingFightEnd.win);
+        } else if ((afterResources.hull ?? 0) <= 0) {
+          finishCombat(false);
+        } else if (newEnemyHp <= 0) {
+          const endEventRef = currentFight?.endFightEvent;
+          const endEvent = findEventByIdOrTitle(endEventRef);
+          setPendingFightEnd({ win: true, endEvent });
+          if (endEvent) {
+            setPlayerVars((prev) => ({ ...prev, fight: 'win' }));
+            setCombatEvent(endEvent);
+          } else {
+            finishCombat(true);
+          }
+        }
+      }
     },
-    [combatEvent, pendingFightEnd, limits, finishCombat, gameCrew, resources]
+    [combatEvent, pendingFightEnd, pendingCombatAction, limits, finishCombat, gameCrew, resources, enemyHp, combatTurn, eventLog, currentFight, findEventByIdOrTitle, mapState, playerVars, turn, stormProgress, nextDestinationEventId, shownEventIds]
   );
 
   const handleIntroNext = useCallback(
