@@ -399,6 +399,7 @@
       }
     ]
   },
+  { "id": "AirshipFight_0", "title": "Начало боя", "text": "Вражеский корабль появляется на экране. Бой начинается.", "options": [{ "text": "Вариант 1", "consequences": {} }, { "text": "Вариант 2", "consequences": {} }] },
   { "id": "AirshipFight_1", "title": "Событие в бою 1", "text": "Бой продолжается.", "options": [{ "text": "Вариант 1", "consequences": {} }, { "text": "Вариант 2", "consequences": {} }] },
   { "id": "AirshipFight_2", "title": "Событие в бою 2", "text": "Бой продолжается.", "options": [{ "text": "Вариант 1", "consequences": {} }, { "text": "Вариант 2", "consequences": {} }] },
   { "id": "AirshipFight_3", "title": "Событие в бою 3", "text": "Бой продолжается.", "options": [{ "text": "Вариант 1", "consequences": {} }, { "text": "Вариант 2", "consequences": {} }] },

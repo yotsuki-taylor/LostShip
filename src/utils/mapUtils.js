@@ -10,6 +10,32 @@ export const NODE_STATUS = {
   REACHABLE: 'reachable',
 };
 
+/** Типы нод: определяется при входе на ноду */
+export const NODE_TYPE = {
+  COMBAT: 'combat',
+  STORY: 'story',
+  RANDOM: 'random',
+  TRADE: 'trade',
+};
+
+/** Шансы: 25% бой, 25% сюжет, 50% рандом, 0% торговля */
+const NODE_TYPE_CHANCES = [
+  { type: NODE_TYPE.COMBAT, chance: 0.25 },
+  { type: NODE_TYPE.STORY, chance: 0.25 },
+  { type: NODE_TYPE.RANDOM, chance: 0.5 },
+  { type: NODE_TYPE.TRADE, chance: 0 },
+];
+
+export function rollNodeType() {
+  const r = Math.random();
+  let acc = 0;
+  for (const { type, chance } of NODE_TYPE_CHANCES) {
+    acc += chance;
+    if (r < acc) return type;
+  }
+  return NODE_TYPE.RANDOM;
+}
+
 /** Количество колонок (прогрессия слева направо) */
 const MAP_COLUMNS = 8;
 
@@ -148,6 +174,7 @@ export function createInitialMapState() {
     edges,
     currentNodeId: 0,
     visitedIds: new Set(),
+    nodeTypes: {},
   };
 }
 
@@ -162,6 +189,7 @@ export function serializeMapState(mapState) {
     edges: mapState.edges,
     currentNodeId: mapState.currentNodeId,
     visitedIds: Array.from(mapState.visitedIds ?? []),
+    nodeTypes: mapState.nodeTypes ?? {},
   };
 }
 
@@ -218,6 +246,7 @@ export function deserializeMapState(saved) {
     edges,
     currentNodeId: saved.currentNodeId ?? 0,
     visitedIds: new Set(saved.visitedIds ?? []),
+    nodeTypes: saved.nodeTypes ?? {},
   };
 }
 
@@ -240,5 +269,6 @@ export function performJump(mapState, targetNodeId) {
     currentNodeId: targetNodeId,
     visitedIds: newVisited,
     reachableIds: newReachable,
+    nodeTypes: mapState.nodeTypes ?? {},
   };
 }

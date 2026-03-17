@@ -105,6 +105,24 @@ export function useSheetData() {
   const localEvents = normalizeEvents(eventsJson);
   let events = sheetData?.events?.length ? sheetData.events : localEvents;
 
+  // События, на которые ссылаются бои (eventStart, eventTurns, endFightEvent), должны быть в списке
+  const fightsList = (sheetData?.fights?.length ? sheetData.fights : fightsJson) ?? [];
+  const fightEventRefs = new Set();
+  fightsList.forEach((f) => {
+    if (f.eventStart) fightEventRefs.add(String(f.eventStart).trim());
+    (f.eventTurns || []).forEach((t) => t && fightEventRefs.add(String(t).trim()));
+    if (f.endFightEvent) fightEventRefs.add(String(f.endFightEvent).trim());
+  });
+  const findInEvents = (e, ref) =>
+    String(e.id) === ref || (e.event || '').trim() === ref || (e.title || '').trim() === ref;
+  const missingRefs = [...fightEventRefs].filter((ref) => !events.some((e) => findInEvents(e, ref)));
+  if (missingRefs.length > 0) {
+    const toAdd = missingRefs
+      .map((ref) => localEvents.find((le) => findInEvents(le, ref)))
+      .filter(Boolean);
+    events = [...events, ...toAdd];
+  }
+
   // Если события из таблицы пришли без вариантов — подставляем choices только при точном совпадении title
   // (не по id: у random и destination_* могут совпадать id, но это разные ивенты)
   if (sheetData?.events?.length && events === sheetData.events) {
