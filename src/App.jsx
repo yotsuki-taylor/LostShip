@@ -24,6 +24,7 @@ const INITIAL_PLAYER_VARS = {
   ship_mage: 'ранен',
   dest_lighthouse: 'undone',
   dest_demon: 'undone',
+  victory: null,
 };
 
 function formatDeltaForLog(delta, extra = {}) {
@@ -171,7 +172,6 @@ export default function App() {
   const [eventLog, setEventLog] = useState([]);
   const [currentEvent, setCurrentEvent] = useState(null);
   const [isEventActive, setIsEventActive] = useState(false);
-  const [stormProgress, setStormProgress] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [introStep, setIntroStep] = useState(0);
   const [playerVars, setPlayerVars] = useState(INITIAL_PLAYER_VARS);
@@ -181,9 +181,8 @@ export default function App() {
   const [pendingCrewInit, setPendingCrewInit] = useState(false);
   const [mapState, setMapState] = useState(null);
   const [isWarping, setIsWarping] = useState(false);
-  const [pendingStormProgress, setPendingStormProgress] = useState(null);
   const [musicEnabled, setMusicEnabled] = useState(getMusicEnabled);
-  const [nextDestinationEventId, setNextDestinationEventId] = useState(1);
+  const [nextDestByDestination, setNextDestByDestination] = useState({ lighthouse: 1, demon: 1 });
   const [shownEventIds, setShownEventIds] = useState([]);
   const [currentFight, setCurrentFight] = useState(null);
   const [combatTurn, setCombatTurn] = useState(0);
@@ -238,7 +237,7 @@ export default function App() {
   }, [pendingCrewInit, showMenu, crew]);
 
   const isGameOver = (resources.hull ?? 0) <= 0;
-  const isVictory = stormProgress >= 100;
+  const isVictory = playerVars.victory === 'yes' || playerVars.victory === '1' || playerVars.victory === true;
 
   useEffect(() => {
     if (isGameOver) clearSave();
@@ -252,6 +251,7 @@ export default function App() {
   const pickNextEvent = useCallback(
     (nextDestId, shownSet, currentTurn) => {
       const dest = playerVars.dest;
+      const destKey = dest === 'lighthouse' ? 'lighthouse' : dest === 'demon' ? 'demon' : null;
       if (currentTurn === 1 && !shownSet.has(getEventKey({ event: 'random', id: 26 }))) {
         const ev26 = events.find((e) => (e?.event || '').toLowerCase() === 'random' && Number(e.id) === 26);
         if (ev26 && matchesEventReq(ev26.event_req, playerVars)) return ev26; // тест боя: ивент 26 только на 2-й ход
@@ -270,6 +270,7 @@ export default function App() {
 
       const notShown = (e) => !shownSet.has(getEventKey(e));
       const availableRandom = randomEvents.filter(notShown);
+      if (!destKey) return availableRandom[Math.floor(Math.random() * availableRandom.length)] ?? randomEvents[0];
       const availableDest = destEvents.filter(notShown);
 
       const destById = (id) => destEvents.find((e) => Number(e.id) === Number(id));
@@ -279,13 +280,24 @@ export default function App() {
         const d1 = destByIdAvailable(1) ?? destById(1);
         return d1;
       }
+      if (nextDestId === 6) {
+        const finalReady = playerVars.dest_lighthouse === 'done' && playerVars.dest_demon === 'done';
+        if (finalReady) {
+          const finalEvent = events.find((e) => (e?.event || '').toLowerCase() === 'final' && matchesEventReq(e.event_req, playerVars));
+          if (finalEvent && notShown(finalEvent)) return finalEvent;
+        }
+        if (destById(6)) {
+          const d6 = destByIdAvailable(6) ?? destById(6);
+          return d6;
+        }
+      }
       if (destEvents.length === 0 || randomEvents.length === 0) {
         const fallback = [...destEvents, ...randomEvents].filter(Boolean);
         return fallback[Math.floor(Math.random() * fallback.length)];
       }
       const useDest = destById(nextDestId);
       const useDestAvailable = destByIdAvailable(nextDestId) ?? useDest;
-      if (Math.random() < 0.3 && useDestAvailable) {
+      if (Math.random() < 0.2 && useDestAvailable) {
         return useDestAvailable;
       }
       const pool = availableRandom.length > 0 ? availableRandom : randomEvents;
@@ -319,49 +331,42 @@ export default function App() {
     const nextCrew = passiveApplied.crew;
     const afterPassiveResources = passiveApplied.resources;
     const tickResources = applyDeltas(afterPassiveResources, {}, limits);
-    const stormGain = isReturnToVisited ? 0 : FIXED_SPEED;
-    const newStormProgress = Math.min(100, stormProgress + stormGain);
 
     setMapState(nextMapState);
     setGameCrew(nextCrew);
     setResources(tickResources);
 
     const willShowEvent = events.length > 0 && !reachedExit && !isReturnToVisited;
-    if (reachedExit || !willShowEvent) {
-      setStormProgress(newStormProgress);
-    } else {
-      setPendingStormProgress(newStormProgress);
-    }
 
     const calmDelta = formatDeltaForLog({});
-    const stormStr = stormGain > 0 ? ` | Путь: +${stormGain}%` : '';
     const jumpMsg = reachedExit
-      ? `Переход в следующий кластер.${calmDelta}${stormStr}`
+      ? `Переход в следующий кластер.${calmDelta}`
       : isReturnToVisited
         ? `Возврат к узлу ${targetNodeId}.${calmDelta}`
-        : `Прыжок к узлу ${targetNodeId}.${calmDelta}${stormStr}`;
+        : `Прыжок к узлу ${targetNodeId}.${calmDelta}`;
     const newEventLog = [...eventLog.slice(-5), jumpMsg].slice(-5);
 
     setEventLog(newEventLog);
 
-    let newNextDestId = nextDestinationEventId;
+    const destKey = playerVars.dest === 'lighthouse' ? 'lighthouse' : playerVars.dest === 'demon' ? 'demon' : 'lighthouse';
+    const currentNextDestId = nextDestByDestination[destKey] ?? 1;
+    let newNextDestByDest = { ...nextDestByDestination };
     let newShownIds = shownEventIds;
     if (willShowEvent) {
       const shownSet = new Set(shownEventIds);
-      const event = pickNextEvent(nextDestinationEventId, shownSet, turn);
+      const event = pickNextEvent(currentNextDestId, shownSet, turn);
       if (event) {
         setCurrentEvent(event);
         setIsEventActive(true);
         newShownIds = [...shownEventIds, getEventKey(event)];
         setShownEventIds(newShownIds);
         if (isDestinationEvent(event)) {
-          newNextDestId = (Number(event.id) || 0) + 1;
-          setNextDestinationEventId(newNextDestId);
+          const nextId = (Number(event.id) || 0) + 1;
+          newNextDestByDest = { ...nextDestByDestination, [destKey]: nextId };
+          setNextDestByDestination(newNextDestByDest);
         }
       } else {
         setEventLog((prev) => [...prev.slice(-5), '[Ошибка: не удалось выбрать событие]']);
-        setStormProgress(newStormProgress);
-        setPendingStormProgress(null);
       }
     }
 
@@ -369,17 +374,17 @@ export default function App() {
       resources: tickResources,
       turn,
       eventLog: newEventLog,
-      stormProgress: newStormProgress,
+      stormProgress: 0,
       playerVars,
       crew: nextCrew,
       mapState: serializeMapState(nextMapState),
-      nextDestinationEventId: newNextDestId,
+      nextDestByDestination: newNextDestByDest,
       shownEventIds: newShownIds,
       currentFight,
       combatTurn,
       enemyHp,
     });
-  }, [mapState, gameCrew, resources, limits, turn, stormProgress, playerVars, events, pickNextEvent, isDestinationEvent, nextDestinationEventId, shownEventIds, getEventKey, eventLog, currentFight, combatTurn, enemyHp]);
+  }, [mapState, gameCrew, resources, limits, turn, playerVars, events, pickNextEvent, isDestinationEvent, nextDestByDestination, shownEventIds, getEventKey, eventLog, currentFight, combatTurn, enemyHp]);
 
   const handleChoice = useCallback(
     (choiceOrIndex) => {
@@ -410,7 +415,7 @@ export default function App() {
       setVariable = { ...statusFromDelta, ...setVariable };
       if (Object.keys(setVariable).length === 0) setVariable = null;
 
-      const difficultyMultiplier = stormProgress > 50 ? 1.2 : 1;
+      const difficultyMultiplier = 1;
       const finalDelta = applyDifficultyToDeltas(resourceDelta, difficultyMultiplier);
 
       const hullDamage = (finalDelta.hull ?? 0) < 0 ? Math.abs(Math.round(finalDelta.hull)) : 0;
@@ -449,21 +454,24 @@ export default function App() {
           setCurrentFight(fightData);
           setCombatTurn(1);
           setEnemyHp(initialEnemyHp);
-          const newEventLog = [
+          const fightStartLog = [
             ...eventLog.slice(-5),
             `Ход ${turn + 1}: ${currentEvent.title} → "${choice.text}"${riskSuffix}${deltaStr}`,
             `Бой начался: ${fightData.name}`,
-          ].slice(-5);
+          ];
+          if (setVariable?.demon === 'захвачен') fightStartLog.push('Демон захвачен.');
+          if (setVariable?.demon === 'подчинен') fightStartLog.push('Демон подчинён.');
+          const newEventLog = fightStartLog.slice(-5);
           setEventLog(newEventLog);
           saveGame({
             resources: afterChoice,
             turn,
             eventLog: newEventLog,
-            stormProgress,
+            stormProgress: 0,
             playerVars: newPlayerVars,
             crew: nextCrew,
             mapState: mapState ? serializeMapState(mapState) : null,
-            nextDestinationEventId,
+            nextDestByDestination,
             shownEventIds,
             currentFight: fightData,
             combatTurn: 1,
@@ -477,17 +485,12 @@ export default function App() {
       setResources(afterChoice);
       setGameCrew(nextCrew);
 
-      if (pendingStormProgress != null) {
-        setStormProgress(pendingStormProgress);
-        setPendingStormProgress(null);
-      }
-
       const riskSuffix = riskOutcome ? ` (${riskOutcome === 'success' ? 'успех' : 'провал'})` : '';
       const deltaStr = formatDeltaForLog(finalDelta);
-      setEventLog((prev) => [
-        ...prev.slice(-5),
-        `Ход ${turn + 1}: ${currentEvent.title} → "${choice.text}"${riskSuffix}${deltaStr}`,
-      ].slice(-5));
+      const logEntries = [...eventLog.slice(-5), `Ход ${turn + 1}: ${currentEvent.title} → "${choice.text}"${riskSuffix}${deltaStr}`];
+      if (setVariable?.demon === 'захвачен') logEntries.push('Демон захвачен.');
+      if (setVariable?.demon === 'подчинен') logEntries.push('Демон подчинён.');
+      setEventLog(logEntries.slice(-5));
 
       setTurn((t) => t + 1);
       setCurrentEvent(null);
@@ -497,17 +500,16 @@ export default function App() {
       const isDead = (afterChoice.hull ?? 0) <= 0;
       if (!isDead) {
         const newTurn = turn + 1;
-        const newStormProgress = pendingStormProgress ?? stormProgress;
         const newEventLog = [...eventLog, `Ход ${newTurn}: ${currentEvent.title} → "${choice.text}"${riskSuffix}${deltaStr}`].slice(-5);
         saveGame({
           resources: afterChoice,
           turn: newTurn,
           eventLog: newEventLog,
-          stormProgress: newStormProgress,
+          stormProgress: 0,
           playerVars: newPlayerVars,
           crew: nextCrew,
           mapState: mapState ? serializeMapState(mapState) : null,
-          nextDestinationEventId,
+          nextDestByDestination,
           shownEventIds,
           currentFight,
           combatTurn,
@@ -515,7 +517,7 @@ export default function App() {
         });
       }
     },
-    [currentEvent, isProcessing, limits, resources, stormProgress, pendingStormProgress, turn, eventLog, playerVars, gameCrew, mapState, nextDestinationEventId, shownEventIds, fights, currentFight, combatTurn, enemyHp]
+    [currentEvent, isProcessing, limits, resources, turn, eventLog, playerVars, gameCrew, mapState, nextDestByDestination, shownEventIds, fights, currentFight, combatTurn, enemyHp]
   );
 
   const findEventByIdOrTitle = useCallback(
@@ -577,11 +579,11 @@ export default function App() {
           resources: afterCombatResources,
           turn,
           eventLog: newEventLog,
-          stormProgress,
+          stormProgress: 0,
           playerVars: endPlayerVars,
           crew: nextCrew,
           mapState: mapState ? serializeMapState(mapState) : null,
-          nextDestinationEventId,
+          nextDestByDestination,
           shownEventIds,
           currentFight: endEvent ? currentFight : null,
           combatTurn: endEvent ? combatTurn : combatTurn,
@@ -597,18 +599,18 @@ export default function App() {
         resources: afterCombatResources,
         turn,
         eventLog: newEventLog,
-        stormProgress,
+        stormProgress: 0,
         playerVars,
         crew: nextCrew,
         mapState: mapState ? serializeMapState(mapState) : null,
-        nextDestinationEventId,
+        nextDestByDestination,
         shownEventIds,
         currentFight,
         combatTurn: nextTurn,
         enemyHp: newEnemyHp,
       });
     },
-    [currentFight, enemyHp, resources, combatTurn, eventLog, mapState, playerVars, turn, stormProgress, nextDestinationEventId, shownEventIds, findEventByIdOrTitle, finishCombat, gameCrew, limits]
+    [currentFight, enemyHp, resources, combatTurn, eventLog, mapState, playerVars, turn, nextDestByDestination, shownEventIds, findEventByIdOrTitle, finishCombat, gameCrew, limits]
   );
 
   const handleCombatAction = useCallback(
@@ -676,7 +678,10 @@ export default function App() {
       let afterResources = applyDeltas(resources, delta, limits);
       if (Object.keys(setVariable).length > 0) setPlayerVars((p) => ({ ...p, ...setVariable }));
 
-      setEventLog((prev) => [...prev.slice(-5), `Бой: ${combatEvent.title} → "${choice?.text || 'Продолжить'}"`].slice(-5));
+      const combatLogEntries = [...eventLog.slice(-5), `Бой: ${combatEvent.title} → "${choice?.text || 'Продолжить'}"`];
+      if (setVariable?.demon === 'захвачен') combatLogEntries.push('Демон захвачен.');
+      if (setVariable?.demon === 'подчинен') combatLogEntries.push('Демон подчинён.');
+      setEventLog(combatLogEntries.slice(-5));
       setCombatEvent(null);
 
       const pending = pendingCombatAction;
@@ -716,11 +721,11 @@ export default function App() {
             resources: finalResources,
             turn,
             eventLog: [...eventLog.slice(-5), `Бой: ${combatEvent.title} → "${choice?.text || 'Продолжить'}"`, `Ход ${combatTurn}: ${actionName}. Вы нанесли ${playerDamageDealt} урона, получили ${playerDamageTaken} урона.`].slice(-5),
-            stormProgress,
+            stormProgress: 0,
             playerVars: { ...playerVars, ...setVariable, fight: won ? 'win' : 'lose' },
             crew: nextCrew,
             mapState: mapState ? serializeMapState(mapState) : null,
-            nextDestinationEventId,
+            nextDestByDestination,
             shownEventIds,
             currentFight: endEvent ? currentFight : null,
             combatTurn: combatTurn,
@@ -733,11 +738,11 @@ export default function App() {
             resources: finalResources,
             turn,
             eventLog: [...eventLog.slice(-5), `Бой: ${combatEvent.title} → "${choice?.text || 'Продолжить'}"`, `Ход ${combatTurn}: ${actionName}. Вы нанесли ${playerDamageDealt} урона, получили ${playerDamageTaken} урона.`].slice(-5),
-            stormProgress,
+            stormProgress: 0,
             playerVars: { ...playerVars, ...setVariable },
             crew: nextCrew,
             mapState: mapState ? serializeMapState(mapState) : null,
-            nextDestinationEventId,
+            nextDestByDestination,
             shownEventIds,
             currentFight,
             combatTurn: nextTurn,
@@ -768,13 +773,15 @@ export default function App() {
         }
       }
     },
-    [combatEvent, pendingFightEnd, pendingCombatAction, limits, finishCombat, gameCrew, resources, enemyHp, combatTurn, eventLog, currentFight, findEventByIdOrTitle, mapState, playerVars, turn, stormProgress, nextDestinationEventId, shownEventIds]
+    [combatEvent, pendingFightEnd, pendingCombatAction, limits, finishCombat, gameCrew, resources, enemyHp, combatTurn, eventLog, currentFight, findEventByIdOrTitle, mapState, playerVars, turn, nextDestByDestination, shownEventIds]
   );
 
   const handleIntroNext = useCallback(
     (choice) => {
       if (choice?.setVariable) {
         setPlayerVars((prev) => ({ ...prev, ...choice.setVariable }));
+        if (choice.setVariable.demon === 'захвачен') setEventLog((prev) => [...prev.slice(-5), 'Демон захвачен.'].slice(-5));
+        if (choice.setVariable.demon === 'подчинен') setEventLog((prev) => [...prev.slice(-5), 'Демон подчинён.'].slice(-5));
       }
       if (choice?.delta && typeof choice.delta === 'object' && Object.keys(choice.delta).length > 0) {
         setResources((prev) => applyDeltas(prev, choice.delta, limits));
@@ -794,16 +801,14 @@ export default function App() {
     setGameCrew(preparedCrew);
     setPendingCrewInit(preparedCrew.length === 0);
     setMapState(createInitialMapState());
-    setPendingStormProgress(null);
     setTurn(0);
     setEventLog([]);
     setCurrentEvent(null);
     setIsEventActive(false);
-    setStormProgress(0);
     setIsProcessing(false);
     setIntroStep(0);
     setPlayerVars(INITIAL_PLAYER_VARS);
-    setNextDestinationEventId(1);
+    setNextDestByDestination({ lighthouse: 1, demon: 1 });
     setShownEventIds([]);
     setCurrentFight(null);
     setCombatTurn(0);
@@ -823,15 +828,15 @@ export default function App() {
     setGameCrew(saved.crew ?? []);
     setPendingCrewInit(false);
     setMapState(deserializeMapState(saved.mapState) ?? createInitialMapState());
-    setPendingStormProgress(null);
     setTurn(saved.turn ?? 0);
     setEventLog((saved.eventLog ?? []).slice(-5));
     setCurrentEvent(null);
     setIsEventActive(false);
-    setStormProgress(saved.stormProgress ?? 0);
     setIsProcessing(false);
     setPlayerVars(saved.playerVars ?? INITIAL_PLAYER_VARS);
-    setNextDestinationEventId(saved.nextDestinationEventId ?? 1);
+    setNextDestByDestination(
+      saved.nextDestByDestination ?? (saved.nextDestinationEventId != null ? { lighthouse: saved.nextDestinationEventId, demon: saved.nextDestinationEventId } : { lighthouse: 1, demon: 1 })
+    );
     setShownEventIds(saved.shownEventIds ?? []);
     setCurrentFight(saved.currentFight ?? null);
     setCombatTurn(saved.combatTurn ?? 0);
@@ -849,16 +854,14 @@ export default function App() {
     setGameCrew([]);
     setPendingCrewInit(false);
     setMapState(createInitialMapState());
-    setPendingStormProgress(null);
     setTurn(0);
     setEventLog([]);
     setCurrentEvent(null);
     setIsEventActive(false);
-    setStormProgress(0);
     setIsProcessing(false);
     setIntroStep(0);
     setPlayerVars(INITIAL_PLAYER_VARS);
-    setNextDestinationEventId(1);
+    setNextDestByDestination({ lighthouse: 1, demon: 1 });
     setShownEventIds([]);
     setCurrentFight(null);
     setCombatTurn(0);
@@ -939,7 +942,7 @@ export default function App() {
         <div className="min-h-screen bg-zinc-950 text-zinc-300 font-mono flex flex-col items-center justify-center p-8">
         <h2 className="text-2xl font-bold text-emerald-500 mb-4">Победа!</h2>
         <p className="text-zinc-400 mb-6 text-center">
-          Пространственное ядро стабилизировано. Вы вышли из бури за {turn} ходов.
+          Продолжение следует
         </p>
         <button
           type="button"
@@ -962,7 +965,7 @@ export default function App() {
           <button
             type="button"
             onClick={() => {
-              saveGame({ resources, turn, eventLog, stormProgress, playerVars, crew: gameCrew, mapState: mapState ? serializeMapState(mapState) : null, nextDestinationEventId, shownEventIds, currentFight, combatTurn, enemyHp });
+              saveGame({ resources, turn, eventLog, stormProgress: 0, playerVars, crew: gameCrew, mapState: mapState ? serializeMapState(mapState) : null, nextDestByDestination, shownEventIds, currentFight, combatTurn, enemyHp });
               setPlayerHitTrigger(0);
               setEnemyHitTrigger(0);
               setShowMenu(true);
@@ -984,16 +987,9 @@ export default function App() {
       </header>
 
       <div className="mb-2 terminal-panel p-3">
-        <div className="text-cyan-500/90 text-sm font-semibold mb-2">
+        <div className="text-cyan-500/90 text-sm font-semibold">
           Курс на {playerVars.dest === 'demon' ? 'поиски демона' : playerVars.dest === 'market' ? 'Мир-Рынок' : playerVars.dest === 'lighthouse' ? 'Планарный Маяк' : '—'}
         </div>
-        <div className="h-4 bg-zinc-800 rounded overflow-hidden border border-zinc-600">
-          <div
-            className="h-full bg-gradient-to-r from-cyan-700 to-emerald-600 transition-all duration-300"
-            style={{ width: `${stormProgress}%` }}
-          />
-        </div>
-        <p className="text-xs text-zinc-500 mt-1 tabular-nums">{stormProgress}%</p>
       </div>
 
       <ShipDisplay

@@ -10,12 +10,19 @@ export function EventLog({ entries }) {
         {entries.length === 0 ? (
           <div className="text-zinc-600 italic">— Лог пуст. Сделайте выбор, чтобы начать. —</div>
         ) : (
-          entries.map((line, i) => (
-            <div key={i} className="leading-relaxed">
-              <span className="text-zinc-600 select-none">&gt; </span>
-              {line}
-            </div>
-          ))
+          entries.map((line, i) => {
+            const text = typeof line === 'object' ? line.text : line;
+            const colorClass =
+              text === 'Демон захвачен.' ? 'text-amber-400' :
+              text === 'Демон подчинён.' ? 'text-emerald-500' :
+              null;
+            return (
+              <div key={i} className="leading-relaxed">
+                <span className="text-zinc-600 select-none">&gt; </span>
+                <span className={colorClass ?? 'text-zinc-400'}>{text}</span>
+              </div>
+            );
+          })
         )}
       </div>
     </div>

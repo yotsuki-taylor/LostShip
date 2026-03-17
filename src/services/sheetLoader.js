@@ -203,7 +203,7 @@ function rowToEvent(row) {
   };
 }
 
-const PLAYER_VAR_KEYS = ['ship', 'guest', 'dest', 'demon', 'engine', 'ship_mage', 'dest_lighthouse', 'dest_demon', 'fight'];
+const PLAYER_VAR_KEYS = ['ship', 'guest', 'dest', 'demon', 'engine', 'ship_mage', 'dest_lighthouse', 'dest_demon', 'fight', 'victory'];
 
 function isPlayerVar(obj) {
   if (!obj || typeof obj !== 'object') return false;
@@ -400,7 +400,7 @@ export async function fetchSheetData() {
     const getEvent = (r) => (getRowValue(r, 'event') || r.event || '').toLowerCase();
     const eventRow = (r) => {
       const ev = getEvent(r);
-      return ev === 'random' || ev === 'destination_lighthouse' || ev === 'destination_demon' || /fight/i.test(ev);
+      return ev === 'random' || ev === 'destination_lighthouse' || ev === 'destination_demon' || ev === 'final' || /fight/i.test(ev);
     };
     const eventRows = mainRows.filter(eventRow);
     let intro = parseIntroFromRows(mainRows);
@@ -415,6 +415,7 @@ export async function fetchSheetData() {
       if (!(ev.event_req || '').trim()) {
         if (evType === 'destination_lighthouse') ev.event_req = 'dest=lighthouse';
         else if (evType === 'destination_demon') ev.event_req = 'dest=demon';
+        else if (evType === 'final') ev.event_req = 'dest_lighthouse=done,dest_demon=done';
       }
       return ev;
     });

@@ -10,7 +10,7 @@
 
 | Колонка | Описание |
 |---------|----------|
-| event | `intro` — интро, `random` — случайные ивенты, `destination_lighthouse` — только при курсе на Маяк, `destination_demon` — только при поисках демона. Destination-ивенты идут по порядку id (1, 2, 3…), между ними вставляются random (70% random / 30% следующий destination). Первый ивент курса — всегда destination id 1. |
+| event | `intro` — интро, `random` — случайные ивенты, `destination_lighthouse` — только при курсе на Маяк, `destination_demon` — только при поисках демона, `final` — финальный квест. Destination-ивенты идут по порядку id (1, 2, 3…), между ними вставляются random (70% random / 30% следующий destination). Первый ивент курса — всегда destination id 1. Квест 6 идёт сразу за 5. **Final** показывается вместо квеста 6, когда выполнены условия `dest_lighthouse=done` и `dest_demon=done`. |
 | event_req | Условия для ивента (пусто = без условий). Формат: `ship=merchant` или `ship=merchant\|guest=scientist` |
 | id | Номер внутри цепочки |
 | title | Название |
@@ -35,6 +35,7 @@
 ## Статусы (event_req, opt_req, opt_consequences)
 
 Переменные статусов (можно задавать в `opt_consequences` и проверять в `event_req`/`opt_req`):
+- **victory**: `yes` или `1` — победа (экран победы). Задайте в `opt_consequences`: `{"victory": "yes"}`
 - **demon**: `сбежал` | `захвачен` | `подчинен`
 - **engine**: `поврежден` | `работает`
 - **ship_mage**: `ранен` | `работает`
@@ -42,6 +43,10 @@
 - **dest_demon**: `undone` (по умолчанию) | `done` — цепочка квестов демона пройдена
 
 Пример: `event_req` = `demon=захвачен` — ивент только если демон захвачен. В `opt1_consequences`: `{"demon": "подчинен"}` — при выборе варианта статус обновится.
+
+## Финальный квест (event=final)
+
+Ивент с `event=final` показывается вместо 6-го квеста из линеек маяка/демона, когда оба условия выполнены: `dest_lighthouse=done` и `dest_demon=done`. Если `event_req` не указан, автоматически ставится `dest_lighthouse=done,dest_demon=done`.
 
 ## Разделитель
 

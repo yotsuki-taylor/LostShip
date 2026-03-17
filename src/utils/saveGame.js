@@ -33,7 +33,7 @@ export function saveGame(state) {
       playerVars: state.playerVars ?? {},
       crew: state.crew ?? [],
       mapState: state.mapState ?? null,
-      nextDestinationEventId: state.nextDestinationEventId ?? 1,
+      nextDestByDestination: state.nextDestByDestination ?? (state.nextDestinationEventId != null ? { lighthouse: state.nextDestinationEventId, demon: state.nextDestinationEventId } : { lighthouse: 1, demon: 1 }),
       shownEventIds: state.shownEventIds ?? [],
       currentFight: state.currentFight ?? null,
       combatTurn: state.combatTurn ?? 0,

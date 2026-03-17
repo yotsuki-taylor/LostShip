@@ -40,7 +40,7 @@ export function normalizeEvents(raw) {
 
 /** Старые ключи в таблице/JSON — при нормализации маппятся в новые */
 const OLD_KEYS = { crew: 'morale', stability: 'morale', scrap: 'supplies', energy: 'energy' };
-const PLAYER_VAR_KEYS = ['ship', 'guest', 'dest', 'demon', 'engine', 'ship_mage', 'dest_lighthouse', 'dest_demon', 'fight'];
+const PLAYER_VAR_KEYS = ['ship', 'guest', 'dest', 'demon', 'engine', 'ship_mage', 'dest_lighthouse', 'dest_demon', 'fight', 'victory'];
 
 function mapConsequencesToNew(obj) {
   const delta = {};
