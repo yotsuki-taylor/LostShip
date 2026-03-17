@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import { fetchSheetData, fetchShipStats, fetchCrew, DEFAULT_SHIP_STATS } from '../services/sheetLoader';
+import { fetchSheetData, fetchShipStats, fetchCrew, fetchFights, DEFAULT_SHIP_STATS } from '../services/sheetLoader';
 import eventsJson from '../data/events.json';
+import fightsJson from '../data/fights.json';
 import { normalizeEvents } from '../data/events';
 
 const REFRESH_INTERVAL_MS = 30000; // обновление каждые 30 сек
@@ -58,30 +59,34 @@ export function useSheetData() {
 
   const load = useCallback(async () => {
     try {
-      const [data, shipStats, crew] = await Promise.all([
+      const [data, shipStats, crew, fights] = await Promise.all([
         fetchSheetData(),
         fetchShipStats(),
         fetchCrew(),
+        fetchFights().catch(() => []),
       ]);
       setSheetData((prev) => {
         const preserved = data ?? (prev?.events?.length ? { intro: prev.intro ?? [], events: prev.events } : null);
         const mergedCrew = (crew && crew.length > 0) ? crew : (prev?.crew ?? []);
+        const mergedFights = (fights && fights.length > 0) ? fights : (prev?.fights?.length ? prev.fights : fightsJson ?? []);
         return preserved
           ? {
               ...preserved,
               shipStats: shipStats ?? prev?.shipStats ?? DEFAULT_SHIP_STATS,
               crew: mergedCrew,
+              fights: mergedFights,
             }
           : {
               shipStats: shipStats ?? DEFAULT_SHIP_STATS,
               crew: mergedCrew,
+              fights: mergedFights,
             };
       });
       setError(null);
     } catch (e) {
       setError(e.message);
       // При сетевых сбоях не теряем уже загруженные события из таблицы.
-      setSheetData((prev) => prev ?? { shipStats: DEFAULT_SHIP_STATS, crew: [] });
+      setSheetData((prev) => prev ?? { shipStats: DEFAULT_SHIP_STATS, crew: [], fights: fightsJson ?? [] });
     } finally {
       setLoading(false);
     }
@@ -139,6 +144,7 @@ export function useSheetData() {
     introSlides,
     shipStats: sheetData?.shipStats ?? DEFAULT_SHIP_STATS,
     crew: sheetData?.crew ?? [],
+    fights: (sheetData?.fights?.length ? sheetData.fights : fightsJson) ?? [],
     loading,
     error,
     fromSheet: !!sheetData?.events?.length,

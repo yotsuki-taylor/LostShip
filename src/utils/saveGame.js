@@ -34,6 +34,10 @@ export function saveGame(state) {
       crew: state.crew ?? [],
       mapState: state.mapState ?? null,
       nextDestinationEventId: state.nextDestinationEventId ?? 1,
+      shownEventIds: state.shownEventIds ?? [],
+      currentFight: state.currentFight ?? null,
+      combatTurn: state.combatTurn ?? 0,
+      enemyHp: state.enemyHp ?? 0,
     };
     localStorage.setItem(SAVE_KEY, JSON.stringify(data));
     return true;

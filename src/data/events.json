@@ -381,5 +381,28 @@
         "consequences": { "hull": 0, "energy": -25, "scrap": 10, "crew": 0, "stability": -5 }
       }
     ]
-  }
+  },
+  {
+    "id": 26,
+    "title": "Тест боя",
+    "text": "Вражеский корабль перехватывает ваш курс. Готовьтесь к бою.",
+    "options": [
+      {
+        "text": "Вступить в бой",
+        "consequences": { "fight": "Планарные пираты" }
+      },
+      {
+        "text": "Попытаться уклониться",
+        "chance": 0.6,
+        "success": { "hull": 30 },
+        "failure": { "hull": -20, "fight": "Планарные пираты" }
+      }
+    ]
+  },
+  { "id": "AirshipFight_1", "title": "Событие в бою 1", "text": "Бой продолжается.", "options": [{ "text": "Вариант 1", "consequences": {} }, { "text": "Вариант 2", "consequences": {} }] },
+  { "id": "AirshipFight_2", "title": "Событие в бою 2", "text": "Бой продолжается.", "options": [{ "text": "Вариант 1", "consequences": {} }, { "text": "Вариант 2", "consequences": {} }] },
+  { "id": "AirshipFight_3", "title": "Событие в бою 3", "text": "Бой продолжается.", "options": [{ "text": "Вариант 1", "consequences": {} }, { "text": "Вариант 2", "consequences": {} }] },
+  { "id": "AirshipFight_4", "title": "Событие в бою 4", "text": "Бой продолжается.", "options": [{ "text": "Вариант 1", "consequences": {} }, { "text": "Вариант 2", "consequences": {} }] },
+  { "id": "AirshipFight_5", "title": "Событие в бою 5", "text": "Бой продолжается.", "options": [{ "text": "Вариант 1", "consequences": {} }, { "text": "Вариант 2", "consequences": {} }] },
+  { "id": "AirshipFight_Finale", "title": "Финал битвы", "text": "Это было нелёгкое сражение...", "options": [{ "text": "Мы сражались мудро и стойко и победили.", "req": "fight=win", "consequences": {} }, { "text": "Наше путешествие окончилось печально.", "req": "fight=lose", "consequences": {} }] }
 ]

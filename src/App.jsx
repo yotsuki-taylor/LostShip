@@ -22,6 +22,8 @@ const INITIAL_PLAYER_VARS = {
   demon: 'сбежал',
   engine: 'поврежден',
   ship_mage: 'ранен',
+  dest_lighthouse: 'undone',
+  dest_demon: 'undone',
 };
 
 function formatDeltaForLog(delta, extra = {}) {
@@ -58,6 +60,15 @@ function saveMusicPreference(enabled) {
 
 function withFixedShipStats(resources) {
   return { ...resources, speed: FIXED_SPEED, attack: FIXED_ATTACK };
+}
+
+function rollD6() {
+  return Math.floor(Math.random() * 6) + 1;
+}
+function rollNd6(n) {
+  let sum = 0;
+  for (let i = 0; i < n; i++) sum += rollD6();
+  return sum;
 }
 
 function getCrewStatusFromHp(hp) {
@@ -151,7 +162,7 @@ function applyPassiveCrewEffects(rawCrew, currentResources, limits) {
 }
 
 export default function App() {
-  const { events, introSlides, shipStats, crew, fromSheet } = useSheetData();
+  const { events, introSlides, shipStats, crew, fights, fromSheet } = useSheetData();
   const audioRef = useRef(null);
 
   const [showMenu, setShowMenu] = useState(true);
@@ -173,7 +184,25 @@ export default function App() {
   const [pendingStormProgress, setPendingStormProgress] = useState(null);
   const [musicEnabled, setMusicEnabled] = useState(getMusicEnabled);
   const [nextDestinationEventId, setNextDestinationEventId] = useState(1);
+  const [shownEventIds, setShownEventIds] = useState([]);
+  const [currentFight, setCurrentFight] = useState(null);
+  const [combatTurn, setCombatTurn] = useState(0);
+  const [enemyHp, setEnemyHp] = useState(0);
+  const [combatEvent, setCombatEvent] = useState(null);
+  const [pendingFightEnd, setPendingFightEnd] = useState(null);
+  const [playerHitTrigger, setPlayerHitTrigger] = useState(0);
+  const [enemyHitTrigger, setEnemyHitTrigger] = useState(0);
+  const [screenShake, setScreenShake] = useState(false);
+
+  useEffect(() => {
+    if (playerHitTrigger <= 0) return;
+    setScreenShake(true);
+    const t = setTimeout(() => setScreenShake(false), 350);
+    return () => clearTimeout(t);
+  }, [playerHitTrigger]);
   const pendingJumpRef = useRef(null);
+
+  const getEventKey = useCallback((e) => `${(e?.event || '').toLowerCase()}-${e?.id ?? e?.title ?? ''}`, []);
 
   const limits = useMemo(() => getResourceLimits(), []);
 
@@ -220,8 +249,15 @@ export default function App() {
   }, []);
 
   const pickNextEvent = useCallback(
-    (nextDestId) => {
+    (nextDestId, shownSet, currentTurn) => {
       const dest = playerVars.dest;
+      if (currentTurn === 1) {
+        const ev26 = events.find((e) => (e?.event || '').toLowerCase() === 'random' && Number(e.id) === 26);
+        if (ev26 && matchesEventReq(ev26.event_req, playerVars)) return ev26; // тест боя: ивент 26 на 2-й ход
+      }
+      const randomEvents = events.filter(
+        (e) => (e?.event || '').toLowerCase() === 'random' && matchesEventReq(e.event_req, playerVars)
+      );
       const destEvents = events
         .filter((e) => {
           const ev = (e?.event || '').toLowerCase();
@@ -230,36 +266,41 @@ export default function App() {
           return false;
         })
         .sort((a, b) => (Number(a.id) || 0) - (Number(b.id) || 0));
-      const randomEvents = events.filter(
-        (e) => (e?.event || '').toLowerCase() === 'random' && matchesEventReq(e.event_req, playerVars)
-      );
+
+      const notShown = (e) => !shownSet.has(getEventKey(e));
+      const availableRandom = randomEvents.filter(notShown);
+      const availableDest = destEvents.filter(notShown);
 
       const destById = (id) => destEvents.find((e) => Number(e.id) === Number(id));
+      const destByIdAvailable = (id) => availableDest.find((e) => Number(e.id) === Number(id));
 
       if (nextDestId === 1 && destById(1)) {
-        return destById(1);
+        const d1 = destByIdAvailable(1) ?? destById(1);
+        return d1;
       }
       if (destEvents.length === 0 || randomEvents.length === 0) {
         const fallback = [...destEvents, ...randomEvents].filter(Boolean);
         return fallback[Math.floor(Math.random() * fallback.length)];
       }
       const useDest = destById(nextDestId);
-      if (Math.random() < 0.3 && useDest) {
-        return useDest;
+      const useDestAvailable = destByIdAvailable(nextDestId) ?? useDest;
+      if (Math.random() < 0.3 && useDestAvailable) {
+        return useDestAvailable;
       }
-      return randomEvents[Math.floor(Math.random() * randomEvents.length)];
+      const pool = availableRandom.length > 0 ? availableRandom : randomEvents;
+      return pool[Math.floor(Math.random() * pool.length)];
     },
-    [events, playerVars, isDestinationEvent]
+    [events, playerVars, isDestinationEvent, getEventKey]
   );
 
   const handleMapNodeClick = useCallback(
     (targetNodeId) => {
-      if (isEventActive || isGameOver || isVictory || !mapState) return;
+      if (isEventActive || isGameOver || isVictory || currentFight || !mapState) return;
       pendingJumpRef.current = targetNodeId;
       setShowMapPopup(false);
       setIsWarping(true);
     },
-    [isEventActive, isGameOver, isVictory, mapState]
+    [isEventActive, isGameOver, isVictory, currentFight, mapState]
   );
 
   const handleWarpEnd = useCallback(() => {
@@ -303,11 +344,15 @@ export default function App() {
     setEventLog(newEventLog);
 
     let newNextDestId = nextDestinationEventId;
+    let newShownIds = shownEventIds;
     if (willShowEvent) {
-      const event = pickNextEvent(nextDestinationEventId);
+      const shownSet = new Set(shownEventIds);
+      const event = pickNextEvent(nextDestinationEventId, shownSet, turn);
       if (event) {
         setCurrentEvent(event);
         setIsEventActive(true);
+        newShownIds = [...shownEventIds, getEventKey(event)];
+        setShownEventIds(newShownIds);
         if (isDestinationEvent(event)) {
           newNextDestId = (Number(event.id) || 0) + 1;
           setNextDestinationEventId(newNextDestId);
@@ -328,8 +373,12 @@ export default function App() {
       crew: nextCrew,
       mapState: serializeMapState(nextMapState),
       nextDestinationEventId: newNextDestId,
+      shownEventIds: newShownIds,
+      currentFight,
+      combatTurn,
+      enemyHp,
     });
-  }, [mapState, gameCrew, resources, limits, turn, stormProgress, playerVars, events, pickNextEvent, isDestinationEvent, nextDestinationEventId, eventLog]);
+  }, [mapState, gameCrew, resources, limits, turn, stormProgress, playerVars, events, pickNextEvent, isDestinationEvent, nextDestinationEventId, shownEventIds, getEventKey, eventLog, currentFight, combatTurn, enemyHp]);
 
   const handleChoice = useCallback(
     (choiceOrIndex) => {
@@ -369,6 +418,56 @@ export default function App() {
       const afterChoice = applyDeltas(resources, finalDelta, limits);
       const newPlayerVars = setVariable ? { ...playerVars, ...setVariable } : playerVars;
       if (setVariable) setPlayerVars(newPlayerVars);
+
+      const fightId = setVariable?.fight;
+      if (fightId != null) {
+        const idStr = String(fightId).trim().toLowerCase().replace(/\s+/g, ' ');
+        let fightData = fights?.length > 0
+          ? fights.find((f) => {
+              const fid = String(f.id).trim().toLowerCase().replace(/\s+/g, ' ');
+              return fid === idStr || fid.includes(idStr) || idStr.includes(fid);
+            })
+          : null;
+        // Fallback: fightId "1" → первый бой в таблице (для events.json)
+        if (!fightData && fights?.length > 0 && String(fightId).trim() === '1') {
+          fightData = fights[0];
+        }
+        if (fightData) {
+          const riskSuffix = riskOutcome ? ` (${riskOutcome === 'success' ? 'успех' : 'провал'})` : '';
+          const deltaStr = formatDeltaForLog(finalDelta);
+          setResources(afterChoice);
+          setGameCrew(nextCrew);
+          setCurrentEvent(null);
+          setIsEventActive(false);
+          setIsProcessing(false);
+          setCurrentFight(fightData);
+          setCombatTurn(1);
+          setEnemyHp(fightData.hp);
+          const newEventLog = [
+            ...eventLog.slice(-5),
+            `Ход ${turn + 1}: ${currentEvent.title} → "${choice.text}"${riskSuffix}${deltaStr}`,
+            `Бой начался: ${fightData.name}`,
+          ].slice(-5);
+          setEventLog(newEventLog);
+          saveGame({
+            resources: afterChoice,
+            turn,
+            eventLog: newEventLog,
+            stormProgress,
+            playerVars: newPlayerVars,
+            crew: nextCrew,
+            mapState: mapState ? serializeMapState(mapState) : null,
+            nextDestinationEventId,
+            shownEventIds,
+            currentFight: fightData,
+            combatTurn: 1,
+            enemyHp: fightData.hp,
+          });
+          return;
+        }
+        console.warn('[Combat] fightId=', JSON.stringify(fightId), 'setVariable=', setVariable, 'fights=', fights?.map((f) => f.id) ?? 'null', 'fightsCount=', fights?.length ?? 0);
+      }
+
       setResources(afterChoice);
       setGameCrew(nextCrew);
 
@@ -403,10 +502,176 @@ export default function App() {
           crew: nextCrew,
           mapState: mapState ? serializeMapState(mapState) : null,
           nextDestinationEventId,
+          shownEventIds,
+          currentFight,
+          combatTurn,
+          enemyHp,
         });
       }
     },
-    [currentEvent, isProcessing, limits, resources, stormProgress, pendingStormProgress, turn, eventLog, playerVars, gameCrew, mapState, nextDestinationEventId]
+    [currentEvent, isProcessing, limits, resources, stormProgress, pendingStormProgress, turn, eventLog, playerVars, gameCrew, mapState, nextDestinationEventId, shownEventIds, fights, currentFight, combatTurn, enemyHp]
+  );
+
+  const findEventByIdOrTitle = useCallback(
+    (ref) => {
+      if (!ref || !events?.length) return null;
+      const s = String(ref).trim();
+      return events.find((e) => String(e.id) === s || (e.event || '').trim() === s || (e.title || '').trim() === s) || null;
+    },
+    [events]
+  );
+
+  const finishCombat = useCallback(
+    (win) => {
+      setPlayerVars((prev) => ({ ...prev, fight: win ? 'win' : 'lose' }));
+      setCurrentFight(null);
+      setCombatTurn(0);
+      setEnemyHp(0);
+      setPendingFightEnd(null);
+      setCombatEvent(null);
+      if (!win) {
+        setEventLog((prev) => [...prev.slice(-5), 'Корабль уничтожен. Поражение.'].slice(-5));
+      } else {
+        setEventLog((prev) => [...prev.slice(-5), 'Враг повержен! Победа!'].slice(-5));
+      }
+    },
+    []
+  );
+
+  const runCombatTurn = useCallback(
+    (playerDamageDealt, playerDamageTaken, actionName) => {
+      if (!currentFight) return;
+      if (playerDamageTaken > 0) setPlayerHitTrigger((t) => t + 1);
+      if (playerDamageDealt > 0) setEnemyHitTrigger((t) => t + 1);
+      const newEnemyHp = Math.max(0, enemyHp - playerDamageDealt);
+      const hullDamage = Math.min(playerDamageTaken, resources.hull ?? 0);
+      const newHull = Math.max(0, (resources.hull ?? 0) - playerDamageTaken);
+      const nextCrew = hullDamage > 0 ? distributeHullDamageToCrew(gameCrew, hullDamage) : gameCrew;
+      setEnemyHp(newEnemyHp);
+      setResources((prev) => ({ ...prev, hull: newHull }));
+      if (hullDamage > 0) setGameCrew(nextCrew);
+      const newEventLog = [...eventLog.slice(-5), `Ход ${combatTurn}: ${actionName}. Вы нанесли ${playerDamageDealt} урона, получили ${playerDamageTaken} урона.`].slice(-5);
+      setEventLog(newEventLog);
+
+      const afterCombatResources = { ...resources, hull: newHull };
+      const combatEnded = newEnemyHp <= 0 || newHull <= 0;
+      if (combatEnded) {
+        const endEventRef = currentFight.endFightEvent;
+        const endEvent = findEventByIdOrTitle(endEventRef);
+        const won = newEnemyHp <= 0;
+        setPendingFightEnd({ win: won, endEvent });
+        const endPlayerVars = { ...playerVars, fight: won ? 'win' : 'lose' };
+        if (endEvent) {
+          setPlayerVars((prev) => ({ ...prev, fight: won ? 'win' : 'lose' }));
+          setCombatEvent(endEvent);
+        } else {
+          finishCombat(won);
+        }
+        saveGame({
+          resources: afterCombatResources,
+          turn,
+          eventLog: newEventLog,
+          stormProgress,
+          playerVars: endPlayerVars,
+          crew: nextCrew,
+          mapState: mapState ? serializeMapState(mapState) : null,
+          nextDestinationEventId,
+          shownEventIds,
+          currentFight: endEvent ? currentFight : null,
+          combatTurn: endEvent ? combatTurn : 0,
+          enemyHp: 0,
+        });
+        return;
+      }
+
+      const nextTurn = combatTurn + 1;
+      setCombatTurn(nextTurn);
+
+      saveGame({
+        resources: afterCombatResources,
+        turn,
+        eventLog: newEventLog,
+        stormProgress,
+        playerVars,
+        crew: nextCrew,
+        mapState: mapState ? serializeMapState(mapState) : null,
+        nextDestinationEventId,
+        shownEventIds,
+        currentFight,
+        combatTurn: nextTurn,
+        enemyHp: newEnemyHp,
+      });
+
+      // EventTurn_1 для хода 1, EventTurn_2 для хода 2 и т.д. 50% шанс после расчёта урона
+      const turnIndex = Math.min(combatTurn - 1, 4);
+      const turnEventRef = currentFight.eventTurns?.[turnIndex];
+      if (Math.random() < 0.5 && turnEventRef) {
+        const ev = findEventByIdOrTitle(turnEventRef);
+        if (ev) setCombatEvent(ev);
+      }
+    },
+    [currentFight, enemyHp, resources, combatTurn, eventLog, mapState, playerVars, turn, stormProgress, nextDestinationEventId, shownEventIds, findEventByIdOrTitle, finishCombat, gameCrew]
+  );
+
+  const handleCombatAction = useCallback(
+    (action) => {
+      if (!currentFight || isProcessing) return;
+      setIsProcessing(true);
+      const enemyDamage = rollNd6(currentFight.attackD6);
+      let playerDamageDealt = 0;
+      let playerDamageTaken = enemyDamage;
+      let actionName = '';
+
+      if (action === 'attack') {
+        playerDamageDealt = rollNd6(2);
+        actionName = 'Атака';
+      } else if (action === 'dodge') {
+        const dodgeRoll = Math.random();
+        if (dodgeRoll < 0.5) playerDamageTaken = 0;
+        else playerDamageTaken = Math.floor(enemyDamage / 2);
+        actionName = 'Уклонение';
+      } else if (action === 'flee') {
+        const demonOk = playerVars.demon && playerVars.demon !== 'сбежал';
+        if (combatTurn >= 3 && demonOk) {
+          setCurrentFight(null);
+          setCombatTurn(0);
+          setEnemyHp(0);
+          setPlayerVars((prev) => ({ ...prev, fight: 'win' }));
+          setEventLog((prev) => [...prev.slice(-5), `Ход ${combatTurn}: Сбежать. Вы сбежали с поля боя.`].slice(-5));
+          setIsProcessing(false);
+          return;
+        }
+        setIsProcessing(false);
+        return;
+      }
+
+      runCombatTurn(playerDamageDealt, playerDamageTaken, actionName);
+      setIsProcessing(false);
+    },
+    [currentFight, combatTurn, isProcessing, playerVars.demon, runCombatTurn]
+  );
+
+  const handleCombatEventChoice = useCallback(
+    (choice) => {
+      if (!combatEvent) return;
+      const delta = choice?.delta ?? {};
+      const setVariable = choice?.setVariable ?? {};
+      const hullDamage = (delta.hull ?? 0) < 0 ? Math.abs(Math.round(delta.hull)) : 0;
+      if (hullDamage > 0) setPlayerHitTrigger((t) => t + 1);
+      const nextCrew = hullDamage > 0 ? distributeHullDamageToCrew(gameCrew, hullDamage) : gameCrew;
+      const afterResources = applyDeltas(resources, delta, limits);
+      setResources(afterResources);
+      if (hullDamage > 0) setGameCrew(nextCrew);
+      if (Object.keys(setVariable).length > 0) setPlayerVars((p) => ({ ...p, ...setVariable }));
+      setCombatEvent(null);
+      if (pendingFightEnd) {
+        finishCombat(pendingFightEnd.win);
+      } else if ((afterResources.hull ?? 0) <= 0) {
+        finishCombat(false);
+      }
+      setEventLog((prev) => [...prev.slice(-5), `Бой: ${combatEvent.title} → "${choice?.text || 'Продолжить'}"`].slice(-5));
+    },
+    [combatEvent, pendingFightEnd, limits, finishCombat, gameCrew, resources]
   );
 
   const handleIntroNext = useCallback(
@@ -440,6 +705,12 @@ export default function App() {
     setIntroStep(0);
     setPlayerVars(INITIAL_PLAYER_VARS);
     setNextDestinationEventId(1);
+    setShownEventIds([]);
+    setCurrentFight(null);
+    setCombatTurn(0);
+    setEnemyHp(0);
+    setCombatEvent(null);
+    setPendingFightEnd(null);
     setShowMenu(false);
     audioRef.current?.play().catch(() => {});
   }, [shipStats, crew]);
@@ -460,6 +731,12 @@ export default function App() {
     setIsProcessing(false);
     setPlayerVars(saved.playerVars ?? INITIAL_PLAYER_VARS);
     setNextDestinationEventId(saved.nextDestinationEventId ?? 1);
+    setShownEventIds(saved.shownEventIds ?? []);
+    setCurrentFight(saved.currentFight ?? null);
+    setCombatTurn(saved.combatTurn ?? 0);
+    setEnemyHp(saved.enemyHp ?? 0);
+    setCombatEvent(null);
+    setPendingFightEnd(null);
     setIntroStep(introSlides.length);
     setShowMenu(false);
     audioRef.current?.play().catch(() => {});
@@ -481,6 +758,12 @@ export default function App() {
     setIntroStep(0);
     setPlayerVars(INITIAL_PLAYER_VARS);
     setNextDestinationEventId(1);
+    setShownEventIds([]);
+    setCurrentFight(null);
+    setCombatTurn(0);
+    setEnemyHp(0);
+    setCombatEvent(null);
+    setPendingFightEnd(null);
     setShowMenu(true);
   }, [isVictory, shipStats]);
 
@@ -558,13 +841,13 @@ export default function App() {
   return (
     <>
       <audio ref={audioRef} src={MUSIC_PATH} loop preload="auto" muted={!musicEnabled} />
-      <div className="min-h-screen bg-zinc-950 text-zinc-300 font-mono p-4">
+      <div className={`min-h-screen bg-zinc-950 text-zinc-300 font-mono p-4 ${screenShake ? 'animate-screen-shake' : ''}`}>
       <header className="mb-2 flex justify-between items-center">
         <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={() => {
-              saveGame({ resources, turn, eventLog, stormProgress, playerVars, crew: gameCrew, mapState: mapState ? serializeMapState(mapState) : null, nextDestinationEventId });
+              saveGame({ resources, turn, eventLog, stormProgress, playerVars, crew: gameCrew, mapState: mapState ? serializeMapState(mapState) : null, nextDestinationEventId, shownEventIds, currentFight, combatTurn, enemyHp });
               setShowMenu(true);
             }}
             className="p-1.5 rounded border-2 border-zinc-600 bg-zinc-800/50 hover:border-amber-500 hover:bg-zinc-700/50 transition-colors"
@@ -596,13 +879,19 @@ export default function App() {
         <p className="text-xs text-zinc-500 mt-1 tabular-nums">{stormProgress}%</p>
       </div>
 
-      <ShipDisplay isWarping={isWarping} onWarpEnd={handleWarpEnd} />
+      <ShipDisplay
+        isWarping={isWarping}
+        onWarpEnd={handleWarpEnd}
+        enemy={currentFight ? { icon: currentFight.icon, name: currentFight.name, hp: enemyHp, maxHp: currentFight.hp } : null}
+        playerHitTrigger={playerHitTrigger}
+        enemyHitTrigger={enemyHitTrigger}
+      />
 
       <InfoPanel playerVars={playerVars} resources={resources} />
 
       <EventPopup
-        event={currentEvent}
-        onChoice={handleChoice}
+        event={currentEvent || combatEvent}
+        onChoice={combatEvent ? handleCombatEventChoice : handleChoice}
         disabled={isProcessing}
         playerVars={playerVars}
       />
@@ -610,24 +899,55 @@ export default function App() {
       <EventLog entries={eventLog} />
 
       <div className="mb-2 flex justify-between gap-4">
-        <button
-          type="button"
-          onClick={() => setShowCrewPopup(true)}
-          className="flex-1 py-3 rounded border-2 border-zinc-600 bg-zinc-800/50 font-mono text-zinc-300 hover:border-amber-500 hover:text-amber-400 transition-colors"
-        >
-          Команда
-        </button>
-        <button
-          type="button"
-          disabled={isEventActive || isWarping}
-          onClick={() => {
-            if (!mapState) setMapState(createInitialMapState());
-            setShowMapPopup(true);
-          }}
-          className="flex-1 py-3 rounded border-2 border-amber-600 bg-amber-900/30 font-mono font-bold text-amber-400 hover:bg-amber-800/40 hover:border-amber-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-amber-600 disabled:hover:bg-amber-900/30 disabled:hover:text-amber-400"
-        >
-          Совершить прыжок
-        </button>
+        {currentFight ? (
+          <>
+            <button
+              type="button"
+              disabled={isProcessing || combatTurn < 3 || !playerVars.demon || playerVars.demon === 'сбежал'}
+              onClick={() => handleCombatAction('flee')}
+              className="flex-1 py-3 rounded border-2 border-zinc-600 bg-zinc-800/50 font-mono text-zinc-300 hover:border-amber-500 hover:text-amber-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Сбежать
+            </button>
+            <button
+              type="button"
+              disabled={isProcessing}
+              onClick={() => handleCombatAction('dodge')}
+              className="flex-1 py-3 rounded border-2 border-zinc-600 bg-zinc-800/50 font-mono text-zinc-300 hover:border-amber-500 hover:text-amber-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Уклонение
+            </button>
+            <button
+              type="button"
+              disabled={isProcessing}
+              onClick={() => handleCombatAction('attack')}
+              className="flex-1 py-3 rounded border-2 border-red-600 bg-red-900/30 font-mono font-bold text-red-400 hover:bg-red-800/40 hover:border-red-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Атака
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={() => setShowCrewPopup(true)}
+              className="flex-1 py-3 rounded border-2 border-zinc-600 bg-zinc-800/50 font-mono text-zinc-300 hover:border-amber-500 hover:text-amber-400 transition-colors"
+            >
+              Команда
+            </button>
+            <button
+              type="button"
+              disabled={isEventActive || isWarping}
+              onClick={() => {
+                if (!mapState) setMapState(createInitialMapState());
+                setShowMapPopup(true);
+              }}
+              className="flex-1 py-3 rounded border-2 border-amber-600 bg-amber-900/30 font-mono font-bold text-amber-400 hover:bg-amber-800/40 hover:border-amber-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-amber-600 disabled:hover:bg-amber-900/30 disabled:hover:text-amber-400"
+            >
+              Совершить прыжок
+            </button>
+          </>
+        )}
       </div>
 
       {showMapPopup && mapState && (

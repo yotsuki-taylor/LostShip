@@ -1,0 +1,11 @@
+[
+  {
+    "id": "Планарные пираты",
+    "name": "Планарные пираты",
+    "hp": 20,
+    "attackD6": 2,
+    "icon": "ship_black",
+    "eventTurns": ["AirshipFight_1", "AirshipFight_2", "AirshipFight_3", "AirshipFight_4", "AirshipFight_5"],
+    "endFightEvent": "AirshipFight_Finale"
+  }
+]

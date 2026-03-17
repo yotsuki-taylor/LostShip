@@ -26,7 +26,7 @@ export const RESOURCE_UI_KEYS = ['hull', 'energy', 'supplies', 'morale'];
 /** Ключи для проверки дельт из событий (включая старый формат таблицы) */
 export const DELTA_KEYS = [...RESOURCE_KEYS, ...Object.keys(OLD_TO_NEW)];
 
-export const STATUS_VAR_KEYS = ['demon', 'engine', 'ship_mage'];
+export const STATUS_VAR_KEYS = ['demon', 'engine', 'ship_mage', 'dest_lighthouse', 'dest_demon'];
 
 export const RESOURCE_UNITS = {
   hull: '%',

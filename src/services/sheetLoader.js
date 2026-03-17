@@ -12,10 +12,13 @@ const SHIP_STATS_GID = '1262995639';
 const CREW_GID = '21323879';
 /** gid листа Intro — если интро на отдельной вкладке, укажите здесь */
 const INTRO_GID = '';
+/** gid листа Fights — боевая система */
+const FIGHTS_GID = '905768052';
 
 const SHIP_STATS_URL = SHIP_STATS_GID ? `${SHEET_BASE}&gid=${SHIP_STATS_GID}` : null;
 const CREW_URL = CREW_GID ? `${SHEET_BASE}&gid=${CREW_GID}` : null;
 const INTRO_URL = INTRO_GID ? `${SHEET_BASE}&gid=${INTRO_GID}` : null;
+const FIGHTS_URL = FIGHTS_GID ? `${SHEET_BASE}&gid=${FIGHTS_GID}` : null;
 
 const FETCH_RETRIES = 3;
 const FETCH_RETRY_DELAY_MS = 800;
@@ -156,16 +159,18 @@ function rowToEvent(row) {
     const consequences = getOptConsequences(row, i);
     let choice = {};
     if (consequences?.chance != null && consequences?.success != null && consequences?.failure != null) {
+      const topLevel = splitConsequences(consequences);
       const succ = splitConsequences(consequences.success);
       const fail = splitConsequences(consequences.failure);
+      const mergeSetVar = (sv) => (topLevel.setVariable && sv) ? { ...topLevel.setVariable, ...sv } : (topLevel.setVariable || sv);
       choice = {
         text,
         optReq,
         chance: consequences.chance,
         success: { hull: 0, energy: 0, scrap: 0, crew: 0, stability: 0, ...succ.delta },
         failure: { hull: 0, energy: 0, scrap: 0, crew: 0, stability: 0, ...fail.delta },
-        successSetVariable: succ.setVariable,
-        failureSetVariable: fail.setVariable,
+        successSetVariable: mergeSetVar(succ.setVariable),
+        failureSetVariable: mergeSetVar(fail.setVariable),
       };
     } else if (consequences) {
       const { delta, setVariable } = splitConsequences(consequences);
@@ -192,7 +197,7 @@ function rowToEvent(row) {
   };
 }
 
-const PLAYER_VAR_KEYS = ['ship', 'guest', 'dest', 'demon', 'engine', 'ship_mage'];
+const PLAYER_VAR_KEYS = ['ship', 'guest', 'dest', 'demon', 'engine', 'ship_mage', 'dest_lighthouse', 'dest_demon', 'fight'];
 
 function isPlayerVar(obj) {
   if (!obj || typeof obj !== 'object') return false;
@@ -298,12 +303,24 @@ function getAllOptTextsFromRow(row) {
 
 /** Ищет колонку opt N req */
 function getOptReq(row, n) {
-  const variants = [`opt${n}_req`, `opt${n} req`, `opt ${n} req`];
+  const variants = [
+    `opt${n}_req`, `opt${n} req`, `opt ${n} req`, `opt ${n}_req`, `opt${n}-req`,
+    `option${n}_req`, `option ${n} req`, `choice${n}_req`,
+    `вариант ${n} req`, `опция ${n} req`,
+  ];
   for (const v of variants) {
     const val = getRowValue(row, v);
-    if (val !== undefined) return val;
+    if (val) return val;
   }
-  return (row[`opt${n}_req`] || row[`opt${n} req`] || '').trim();
+  for (const [key, val] of Object.entries(row)) {
+    if (key.startsWith('_')) continue;
+    const kn = key.toLowerCase().replace(/[- ]/g, '_');
+    if (kn.includes('req') && (kn.includes(`opt${n}`) || kn.includes(`option${n}`) || kn.match(new RegExp(`[^0-9]${n}[^0-9]`)))) {
+      const s = String(val || '').trim();
+      if (s) return s;
+    }
+  }
+  return '';
 }
 
 /** Ищет колонку opt N consequences */
@@ -377,7 +394,7 @@ export async function fetchSheetData() {
     const getEvent = (r) => (getRowValue(r, 'event') || r.event || '').toLowerCase();
     const eventRow = (r) => {
       const ev = getEvent(r);
-      return ev === 'random' || ev === 'destination_lighthouse' || ev === 'destination_demon';
+      return ev === 'random' || ev === 'destination_lighthouse' || ev === 'destination_demon' || /fight/i.test(ev);
     };
     const eventRows = mainRows.filter(eventRow);
     let intro = parseIntroFromRows(mainRows);
@@ -540,6 +557,50 @@ export async function fetchCrew() {
     return crew;
   } catch (e) {
     console.warn('[SheetLoader] Crew fetch failed:', e.message);
+    return [];
+  }
+}
+
+/** Парсит таблицу Fights: ID, HP, Attack(d6), Icon, EventTurn1-5, EndFightEvent */
+export async function fetchFights() {
+  if (!FIGHTS_URL) return [];
+  try {
+    const text = await fetchWithRetry(FIGHTS_URL, { headers: { Accept: 'text/csv' } });
+    const rows = parseCSV(text);
+    if (rows.length < 2) return [];
+
+    const fights = [];
+    for (const row of rows) {
+      const id = getRowValue(row, 'id') || getRowValue(row, 'fight') || row.id || row.ID || row.fight || row.Fight || '';
+      if (!id) continue;
+      const hp = parseInt(getRowValue(row, 'hp') || row.hp || row.HP || '0', 10) || 0;
+      const attackD6 = parseInt(
+        getRowValue(row, 'attack') || getRowValue(row, 'attack(d6)') || getRowValue(row, 'attack_d6') ||
+        row.attack || row['Attack(d6)'] || row['Attack (d6)'] || '1',
+        10
+      ) || 1;
+      const icon = getRowValue(row, 'icon') || row.icon || row.Icon || '';
+      const getEventTurn = (n) => getRowValue(row, `eventturn_${n}`) || getRowValue(row, `eventturn${n}`) || row[`EventTurn_${n}`] || row[`EventTurn${n}`] || '';
+      const eventTurn1 = getEventTurn(1);
+      const eventTurn2 = getEventTurn(2);
+      const eventTurn3 = getEventTurn(3);
+      const eventTurn4 = getEventTurn(4);
+      const eventTurn5 = getEventTurn(5);
+      const endFightEvent = getRowValue(row, 'endfightevent') || row.endfightevent || row.EndFightEvent || '';
+
+      fights.push({
+        id: String(id).trim(),
+        name: id,
+        hp,
+        attackD6,
+        icon,
+        eventTurns: [eventTurn1, eventTurn2, eventTurn3, eventTurn4, eventTurn5],
+        endFightEvent,
+      });
+    }
+    return fights;
+  } catch (e) {
+    console.warn('[SheetLoader] Fights fetch failed:', e.message);
     return [];
   }
 }
