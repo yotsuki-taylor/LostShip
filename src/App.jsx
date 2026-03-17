@@ -194,30 +194,13 @@ export default function App() {
   const [playerHitTrigger, setPlayerHitTrigger] = useState(0);
   const [enemyHitTrigger, setEnemyHitTrigger] = useState(0);
   const [screenShake, setScreenShake] = useState(false);
-  const skipNextDamageEffectRef = useRef(false);
 
   useEffect(() => {
     if (playerHitTrigger <= 0) return;
-    if (skipNextDamageEffectRef.current) {
-      skipNextDamageEffectRef.current = false;
-      setPlayerHitTrigger(0);
-      setEnemyHitTrigger(0);
-      return;
-    }
     setScreenShake(true);
     const t = setTimeout(() => setScreenShake(false), 350);
     return () => clearTimeout(t);
   }, [playerHitTrigger]);
-
-  useEffect(() => {
-    if (enemyHitTrigger <= 0) return;
-    if (skipNextDamageEffectRef.current) {
-      skipNextDamageEffectRef.current = false;
-      setPlayerHitTrigger(0);
-      setEnemyHitTrigger(0);
-      return;
-    }
-  }, [enemyHitTrigger]);
   const pendingJumpRef = useRef(null);
 
   const getEventKey = useCallback((e) => `${(e?.event || '').toLowerCase()}-${e?.id ?? e?.title ?? ''}`, []);
@@ -804,7 +787,8 @@ export default function App() {
 
   const handleNewGame = useCallback(() => {
     clearSave();
-    skipNextDamageEffectRef.current = true;
+    setPlayerHitTrigger(0);
+    setEnemyHitTrigger(0);
     setResources(withFixedShipStats(shipStats ?? DEFAULT_SHIP_STATS));
     const preparedCrew = rollInitialCrewDamage(pickCrewNames(crew));
     setGameCrew(preparedCrew);
@@ -833,7 +817,8 @@ export default function App() {
   const handleContinue = useCallback(() => {
     const saved = loadGame();
     if (!saved) return;
-    skipNextDamageEffectRef.current = true;
+    setPlayerHitTrigger(0);
+    setEnemyHitTrigger(0);
     setResources(withFixedShipStats(migrateResources(saved.resources) ?? shipStats ?? DEFAULT_SHIP_STATS));
     setGameCrew(saved.crew ?? []);
     setPendingCrewInit(false);
@@ -978,6 +963,8 @@ export default function App() {
             type="button"
             onClick={() => {
               saveGame({ resources, turn, eventLog, stormProgress, playerVars, crew: gameCrew, mapState: mapState ? serializeMapState(mapState) : null, nextDestinationEventId, shownEventIds, currentFight, combatTurn, enemyHp });
+              setPlayerHitTrigger(0);
+              setEnemyHitTrigger(0);
               setShowMenu(true);
             }}
             className="p-1.5 rounded border-2 border-zinc-600 bg-zinc-800/50 hover:border-amber-500 hover:bg-zinc-700/50 transition-colors"
