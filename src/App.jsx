@@ -162,7 +162,7 @@ function applyPassiveCrewEffects(rawCrew, currentResources, limits) {
 }
 
 export default function App() {
-  const { events, introSlides, shipStats, crew, fights, fromSheet } = useSheetData();
+  const { events, introSlides, shipStats, crew, fights, fromSheet, loading } = useSheetData();
   const audioRef = useRef(null);
 
   const [showMenu, setShowMenu] = useState(true);
@@ -194,13 +194,30 @@ export default function App() {
   const [playerHitTrigger, setPlayerHitTrigger] = useState(0);
   const [enemyHitTrigger, setEnemyHitTrigger] = useState(0);
   const [screenShake, setScreenShake] = useState(false);
+  const skipNextDamageEffectRef = useRef(false);
 
   useEffect(() => {
     if (playerHitTrigger <= 0) return;
+    if (skipNextDamageEffectRef.current) {
+      skipNextDamageEffectRef.current = false;
+      setPlayerHitTrigger(0);
+      setEnemyHitTrigger(0);
+      return;
+    }
     setScreenShake(true);
     const t = setTimeout(() => setScreenShake(false), 350);
     return () => clearTimeout(t);
   }, [playerHitTrigger]);
+
+  useEffect(() => {
+    if (enemyHitTrigger <= 0) return;
+    if (skipNextDamageEffectRef.current) {
+      skipNextDamageEffectRef.current = false;
+      setPlayerHitTrigger(0);
+      setEnemyHitTrigger(0);
+      return;
+    }
+  }, [enemyHitTrigger]);
   const pendingJumpRef = useRef(null);
 
   const getEventKey = useCallback((e) => `${(e?.event || '').toLowerCase()}-${e?.id ?? e?.title ?? ''}`, []);
@@ -531,7 +548,6 @@ export default function App() {
     (win) => {
       setPlayerVars((prev) => ({ ...prev, fight: win ? 'win' : 'lose' }));
       setCurrentFight(null);
-      setCombatTurn(0);
       setEnemyHp(0);
       setPendingFightEnd(null);
       setPendingCombatAction(null);
@@ -555,12 +571,12 @@ export default function App() {
       const newHull = Math.max(0, (resources.hull ?? 0) - playerDamageTaken);
       const nextCrew = hullDamage > 0 ? distributeHullDamageToCrew(gameCrew, hullDamage) : gameCrew;
       setEnemyHp(newEnemyHp);
-      setResources((prev) => ({ ...prev, hull: newHull }));
+      let afterCombatResources = { ...resources, hull: newHull };
+      if (actionName === 'Атака') afterCombatResources = applyDeltas(afterCombatResources, { energy: -3 }, limits);
+      setResources(afterCombatResources);
       if (hullDamage > 0) setGameCrew(nextCrew);
       const newEventLog = [...eventLog.slice(-5), `Ход ${combatTurn}: ${actionName}. Вы нанесли ${playerDamageDealt} урона, получили ${playerDamageTaken} урона.`].slice(-5);
       setEventLog(newEventLog);
-
-      const afterCombatResources = { ...resources, hull: newHull };
       const combatEnded = newEnemyHp <= 0 || newHull <= 0;
       if (combatEnded) {
         const endEventRef = currentFight.endFightEvent;
@@ -585,7 +601,7 @@ export default function App() {
           nextDestinationEventId,
           shownEventIds,
           currentFight: endEvent ? currentFight : null,
-          combatTurn: endEvent ? combatTurn : 0,
+          combatTurn: endEvent ? combatTurn : combatTurn,
           enemyHp: 0,
         });
         return;
@@ -609,12 +625,16 @@ export default function App() {
         enemyHp: newEnemyHp,
       });
     },
-    [currentFight, enemyHp, resources, combatTurn, eventLog, mapState, playerVars, turn, stormProgress, nextDestinationEventId, shownEventIds, findEventByIdOrTitle, finishCombat, gameCrew]
+    [currentFight, enemyHp, resources, combatTurn, eventLog, mapState, playerVars, turn, stormProgress, nextDestinationEventId, shownEventIds, findEventByIdOrTitle, finishCombat, gameCrew, limits]
   );
 
   const handleCombatAction = useCallback(
     (action) => {
       if (!currentFight || isProcessing) return;
+      if (action === 'attack' && (resources.energy ?? 0) < 3) {
+        setEventLog((prev) => [...prev.slice(-5), 'Недостаточно энергии для атаки (нужно 3).'].slice(-5));
+        return;
+      }
       setIsProcessing(true);
       const enemyDamage = rollNd6(currentFight.attackD6);
       let playerDamageDealt = 0;
@@ -633,7 +653,6 @@ export default function App() {
         const demonOk = playerVars.demon && playerVars.demon !== 'сбежал';
         if (combatTurn >= 3 && demonOk) {
           setCurrentFight(null);
-          setCombatTurn(0);
           setEnemyHp(0);
           setPlayerVars((prev) => ({ ...prev, fight: 'win' }));
           setEventLog((prev) => [...prev.slice(-5), `Ход ${combatTurn}: Сбежать. Вы сбежали с поля боя.`].slice(-5));
@@ -660,7 +679,7 @@ export default function App() {
       runCombatTurn(playerDamageDealt, playerDamageTaken, actionName);
       setIsProcessing(false);
     },
-    [currentFight, combatTurn, isProcessing, playerVars.demon, runCombatTurn, findEventByIdOrTitle]
+    [currentFight, combatTurn, isProcessing, playerVars.demon, resources.energy, runCombatTurn, findEventByIdOrTitle]
   );
 
   const handleCombatEventChoice = useCallback(
@@ -691,7 +710,9 @@ export default function App() {
         const totalEnemyDamage = playerDamageDealt + choiceEnemyDamage;
         const newEnemyHp = Math.max(0, (enemyHp ?? 0) - totalEnemyDamage);
 
-        setResources({ ...afterResources, hull: newHull });
+        let finalResources = { ...afterResources, hull: newHull };
+        if (actionName === 'Атака') finalResources = applyDeltas(finalResources, { energy: -3 }, limits);
+        setResources(finalResources);
         setGameCrew(nextCrew);
         setEnemyHp(newEnemyHp);
         setEventLog((prev) => [...prev.slice(-5), `Ход ${combatTurn}: ${actionName}. Вы нанесли ${playerDamageDealt} урона, получили ${playerDamageTaken} урона.`].slice(-5));
@@ -709,7 +730,7 @@ export default function App() {
             finishCombat(won);
           }
           saveGame({
-            resources: { ...afterResources, hull: newHull },
+            resources: finalResources,
             turn,
             eventLog: [...eventLog.slice(-5), `Бой: ${combatEvent.title} → "${choice?.text || 'Продолжить'}"`, `Ход ${combatTurn}: ${actionName}. Вы нанесли ${playerDamageDealt} урона, получили ${playerDamageTaken} урона.`].slice(-5),
             stormProgress,
@@ -719,14 +740,14 @@ export default function App() {
             nextDestinationEventId,
             shownEventIds,
             currentFight: endEvent ? currentFight : null,
-            combatTurn: 0,
+            combatTurn: combatTurn,
             enemyHp: 0,
           });
         } else {
           const nextTurn = combatTurn + 1;
           setCombatTurn(nextTurn);
           saveGame({
-            resources: { ...afterResources, hull: newHull },
+            resources: finalResources,
             turn,
             eventLog: [...eventLog.slice(-5), `Бой: ${combatEvent.title} → "${choice?.text || 'Продолжить'}"`, `Ход ${combatTurn}: ${actionName}. Вы нанесли ${playerDamageDealt} урона, получили ${playerDamageTaken} урона.`].slice(-5),
             stormProgress,
@@ -783,6 +804,7 @@ export default function App() {
 
   const handleNewGame = useCallback(() => {
     clearSave();
+    skipNextDamageEffectRef.current = true;
     setResources(withFixedShipStats(shipStats ?? DEFAULT_SHIP_STATS));
     const preparedCrew = rollInitialCrewDamage(pickCrewNames(crew));
     setGameCrew(preparedCrew);
@@ -811,6 +833,7 @@ export default function App() {
   const handleContinue = useCallback(() => {
     const saved = loadGame();
     if (!saved) return;
+    skipNextDamageEffectRef.current = true;
     setResources(withFixedShipStats(migrateResources(saved.resources) ?? shipStats ?? DEFAULT_SHIP_STATS));
     setGameCrew(saved.crew ?? []);
     setPendingCrewInit(false);
@@ -861,6 +884,20 @@ export default function App() {
   }, [isVictory, shipStats]);
 
   if (showMenu) {
+    if (loading) {
+      return (
+        <>
+          <audio ref={audioRef} src={MUSIC_PATH} loop preload="auto" muted={!musicEnabled} />
+          <div className="min-h-screen bg-zinc-950 text-zinc-300 font-mono flex flex-col items-center justify-center p-8">
+            <h1 className="text-2xl font-bold text-amber-500/90 tracking-wider mb-6">LOST SHIP</h1>
+            <p className="text-zinc-500 text-sm mb-4">Загрузка...</p>
+            <div className="w-64 h-2 bg-zinc-800 rounded overflow-hidden border border-zinc-600">
+              <div className="h-full bg-amber-500/80 animate-loading-progress rounded" />
+            </div>
+          </div>
+        </>
+      );
+    }
     return (
       <>
         <audio ref={audioRef} src={MUSIC_PATH} loop preload="auto" muted={!musicEnabled} />
@@ -1012,7 +1049,7 @@ export default function App() {
             </button>
             <button
               type="button"
-              disabled={isProcessing}
+              disabled={isProcessing || (resources.energy ?? 0) < 3}
               onClick={() => handleCombatAction('attack')}
               className="flex-1 py-3 rounded border-2 border-red-600 bg-red-900/30 font-mono font-bold text-red-400 hover:bg-red-800/40 hover:border-red-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
