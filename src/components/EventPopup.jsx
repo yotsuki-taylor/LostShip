@@ -1,5 +1,6 @@
 import React from 'react';
 import { matchesEventReq } from '../services/sheetLoader';
+import { formatDeltaForDisplay } from '../utils/resourceHelpers';
 
 /**
  * Модальное окно для событий — перекрывает экран, невозможно пропустить.
@@ -30,18 +31,23 @@ export function EventPopup({ event, onChoice, disabled, playerVars = {}, resourc
         </h2>
         <p className="text-zinc-300 mb-6 leading-relaxed">{event.description}</p>
         <div className="space-y-3">
-          {choicesToShow.map((choice, idx) => (
-            <button
-              key={idx}
-              type="button"
-              disabled={disabled}
-              onClick={() => onChoice(choice)}
-              className="block w-full text-left px-4 py-3 rounded border-2 border-zinc-600 bg-zinc-800/90 font-mono hover:border-amber-500 hover:bg-zinc-700/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              <span className="text-zinc-500 select-none">[{idx + 1}] </span>
-              {choice.text}
-            </button>
-          ))}
+          {choicesToShow.map((choice, idx) => {
+            const isRisk = choice.chance != null && choice.success != null && choice.failure != null;
+            const deltaStr = !isRisk && choice.delta ? formatDeltaForDisplay(choice.delta) : '';
+            return (
+              <button
+                key={idx}
+                type="button"
+                disabled={disabled}
+                onClick={() => onChoice(choice)}
+                className="block w-full text-left px-4 py-3 rounded border-2 border-zinc-600 bg-zinc-800/90 font-mono hover:border-amber-500 hover:bg-zinc-700/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <span className="text-zinc-500 select-none">[{idx + 1}] </span>
+                {choice.text}
+                {deltaStr && <span className="block text-xs text-zinc-500 mt-1">{deltaStr}</span>}
+              </button>
+            );
+          })}
         </div>
       </div>
     </div>

@@ -96,6 +96,24 @@ export function normalizeDeltaToNewFormat(deltas) {
 }
 
 /**
+ * Форматирует дельту для отображения: "Прочность: -10%, Припасы: +5"
+ */
+export function formatDeltaForDisplay(delta) {
+  if (!delta || typeof delta !== 'object') return '';
+  const combined = normalizeDeltaToNewFormat(delta);
+  const labels = getResourceLabels();
+  const parts = [];
+  Object.entries(combined).forEach(([key, val]) => {
+    if (val === 0 || val === undefined) return;
+    const label = labels[key] ?? key;
+    const unit = RESOURCE_UNITS[key] ?? '';
+    const sign = val > 0 ? '+' : '';
+    parts.push(`${label}: ${sign}${val}${unit}`);
+  });
+  return parts.length > 0 ? parts.join(', ') : '';
+}
+
+/**
  * Применяет дельты к ресурсам и возвращает новый объект ресурсов (с учётом лимитов).
  * Поддерживает старый формат (hull, crew и т.д.) — автоматически маппит в новый.
  */
