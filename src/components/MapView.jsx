@@ -1,7 +1,15 @@
 import React from 'react';
-import { NODE_STATUS, getNodeStatus, getReachableNodeIds } from '../utils/mapUtils';
+import { NODE_STATUS, NODE_TYPE, getNodeStatus, getReachableNodeIds } from '../utils/mapUtils';
 
 const NODE_RADIUS = 24;
+const ICON_SIZE = 40;
+
+const NODE_TYPE_ICONS = {
+  [NODE_TYPE.COMBAT]: 'map_icon_battle',
+  [NODE_TYPE.STORY]: 'map_icon_story',
+  [NODE_TYPE.RANDOM]: 'map_icon_random',
+  [NODE_TYPE.TRADE]: 'map_icon_market',
+};
 const PADDING = 80;
 
 /**
@@ -12,7 +20,7 @@ const PADDING = 80;
 export function MapView({ mapState, onNodeClick }) {
   if (!mapState?.nodes?.length) return null;
 
-  const { nodes, edges, currentNodeId, visitedIds } = mapState;
+  const { nodes, edges, currentNodeId, visitedIds, nodeTypes = {} } = mapState;
   const reachableIds = getReachableNodeIds(currentNodeId, mapState.edges ?? []);
 
   const width = 800;
@@ -81,6 +89,13 @@ export function MapView({ mapState, onNodeClick }) {
           stroke = isReturnToVisited ? 'rgb(251, 191, 36)' : 'rgb(34, 197, 94)';
         }
 
+        const isExplored = status === NODE_STATUS.VISITED || status === NODE_STATUS.CURRENT;
+        const nodeType = nodeTypes[node.id];
+        const isPortalNode = node.id === 0 || node.isExit;
+        const iconName = isPortalNode ? 'map_icon_portal' : (nodeType && NODE_TYPE_ICONS[nodeType]);
+        const iconSrc = iconName ? `${import.meta.env.BASE_URL}images/${iconName}.png` : null;
+        const showIcon = isPortalNode || (isExplored && iconSrc);
+
         return (
           <g key={node.id}>
             <circle
@@ -98,9 +113,19 @@ export function MapView({ mapState, onNodeClick }) {
             />
             {status === NODE_STATUS.CURRENT && (
               <>
-                <circle cx={cx} cy={cy} r={r * 0.4} fill="rgb(39, 39, 42)" />
+                <circle cx={cx} cy={cy} r={r * 0.68} fill="rgb(39, 39, 42)" />
                 <circle cx={cx} cy={cy} r={r + 4} fill="none" stroke="rgba(251, 191, 36, 0.5)" strokeWidth="2" className="animate-pulse" />
               </>
+            )}
+            {showIcon && iconSrc && (
+              <image
+                href={iconSrc}
+                x={cx - ICON_SIZE / 2}
+                y={cy - ICON_SIZE / 2}
+                width={ICON_SIZE}
+                height={ICON_SIZE}
+                preserveAspectRatio="xMidYMid meet"
+              />
             )}
           </g>
         );
