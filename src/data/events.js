@@ -10,6 +10,7 @@ export function normalizeEvents(raw) {
     id: e.id,
     title: e.title,
     description: e.text,
+    event: e.event ?? '',
     choices: e.options.map((opt) => {
       const base = { optReq: opt.req || opt.optReq || null };
       if (opt.consequences) {

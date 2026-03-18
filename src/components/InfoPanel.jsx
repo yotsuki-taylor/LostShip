@@ -37,15 +37,20 @@ export function InfoPanel({ playerVars, resources }) {
               </tr>
             );
           })}
-          {resourceKeys.map((key) => (
-            <tr key={key} className="border-t border-zinc-700/50">
-              <td className="py-0.5">{resourceLabels[key] ?? key}</td>
-              <td className="text-right tabular-nums">
-                {resources[key]}
-                {RESOURCE_UNITS[key] ?? ''}
-              </td>
-            </tr>
-          ))}
+          {resourceKeys.map((key) => {
+            const val = resources[key];
+            const isZero = val === 0 || val === '0';
+            const valueColorClass = isZero ? 'text-red-500' : 'text-zinc-300';
+            return (
+              <tr key={key} className="border-t border-zinc-700/50">
+                <td className="py-0.5">{resourceLabels[key] ?? key}</td>
+                <td className={`text-right tabular-nums font-medium ${valueColorClass}`}>
+                  {resources[key]}
+                  {RESOURCE_UNITS[key] ?? ''}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

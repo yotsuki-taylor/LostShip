@@ -166,15 +166,19 @@ export function getReachableNodeIds(currentNodeId, edges) {
 
 /**
  * Создаёт начальное состояние карты для новой игры.
+ * Один узел (кроме старта и выхода) назначается рынком.
  */
 export function createInitialMapState() {
   const { nodes, edges } = generateMapGraph();
+  const marketCandidates = nodes.filter((n) => n.id !== 0 && !n.isExit);
+  const marketNode = marketCandidates[Math.floor(Math.random() * marketCandidates.length)];
+  const nodeTypes = marketNode ? { [marketNode.id]: NODE_TYPE.TRADE } : {};
   return {
     nodes,
     edges,
     currentNodeId: 0,
     visitedIds: new Set(),
-    nodeTypes: {},
+    nodeTypes,
   };
 }
 
@@ -196,7 +200,7 @@ export function serializeMapState(mapState) {
 /**
  * Добавляет обратные рёбра для возврата на посещённые узлы (миграция для старых сохранений).
  */
-function ensureBidirectionalEdges(nodes, edges) {
+export function ensureBidirectionalEdges(nodes, edges) {
   const exitNode = nodes.find((n) => n.isExit);
   const exitId = exitNode?.id;
   const edgeSet = new Set(edges.map(([a, b]) => `${a}-${b}`));
@@ -241,6 +245,7 @@ export function deserializeMapState(saved) {
   if (!saved || !Array.isArray(saved.nodes) || !Array.isArray(saved.edges)) return null;
   let edges = ensureBidirectionalEdges(saved.nodes, saved.edges);
   edges = ensureAllNodesHaveOutgoingEdges(saved.nodes, edges);
+  edges = ensureBidirectionalEdges(saved.nodes, edges); // обратные рёбра для добавленных ensureAllNodesHaveOutgoingEdges
   return {
     nodes: saved.nodes,
     edges,

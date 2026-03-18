@@ -15,6 +15,10 @@ export function EventLog({ entries }) {
             const colorClass =
               text === 'Демон захвачен.' ? 'text-amber-400' :
               text === 'Демон подчинён.' ? 'text-emerald-500' :
+              text === 'Двигатель: работает.' ? 'text-emerald-500' :
+              text === 'Враг повержен! Победа!' ? 'text-emerald-500' :
+              text === 'Мораль на нуле! Прочность корабля падает.' ? 'text-red-500' :
+              text === 'Экипаж голодает! Мораль и прочность корабля падают.' ? 'text-red-500' :
               null;
             return (
               <div key={i} className="leading-relaxed">

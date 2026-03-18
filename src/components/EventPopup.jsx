@@ -5,12 +5,12 @@ import { matchesEventReq } from '../services/sheetLoader';
  * Модальное окно для событий — перекрывает экран, невозможно пропустить.
  * Фильтрует варианты по optReq (если задан).
  */
-export function EventPopup({ event, onChoice, disabled, playerVars = {} }) {
+export function EventPopup({ event, onChoice, disabled, playerVars = {}, resources = {} }) {
   if (!event) return null;
 
   const visibleChoices = (event.choices || [])
     .map((c, i) => ({ ...c, _idx: i }))
-    .filter((c) => !c.optReq || matchesEventReq(c.optReq, playerVars));
+    .filter((c) => !c.optReq || matchesEventReq(c.optReq, playerVars, resources));
 
   const choicesToShow = visibleChoices.length > 0 ? visibleChoices : [{ text: 'Продолжить', _idx: -1, delta: {} }];
 

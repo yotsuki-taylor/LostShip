@@ -372,15 +372,29 @@ function rowToIntroSlide(row) {
 }
 
 /**
- * Проверяет, подходят ли playerVars под event_req.
- * Формат: "ship=merchant" или "ship=merchant|guest=scientist" (все условия должны совпасть)
+ * Проверяет, подходят ли playerVars и resources под event_req / opt_req.
+ * Формат:
+ * - "ship=merchant" — точное совпадение playerVars
+ * - "supplies>=5" — ресурс supplies >= 5 (операторы: >=, <=, >, <)
+ * - "ship=merchant|supplies>=10" — несколько условий через | или ,
  */
-export function matchesEventReq(eventReq, playerVars) {
+export function matchesEventReq(eventReq, playerVars, resources = {}) {
   if (!eventReq || !eventReq.trim()) return true;
   const parts = eventReq.split(/[|,]/).map((p) => p.trim());
   return parts.every((part) => {
-    const [key, val] = part.split('=').map((s) => s.trim());
-    return playerVars[key] === val;
+    const match = part.match(/^(\w+)\s*(>=|<=|>|<|=)\s*(.+)$/);
+    if (!match) return false;
+    const [, key, op, valStr] = match;
+    const rawVal = RESOURCE_KEYS.includes(key) ? (resources[key] ?? 0) : playerVars[key];
+    const numVal = Number(rawVal);
+    const numReq = Number(valStr);
+    if (op === '=') return String(rawVal) === valStr || (Number.isFinite(numVal) && numVal === numReq);
+    if (!Number.isFinite(numVal) || !Number.isFinite(numReq)) return false;
+    if (op === '>=') return numVal >= numReq;
+    if (op === '<=') return numVal <= numReq;
+    if (op === '>') return numVal > numReq;
+    if (op === '<') return numVal < numReq;
+    return false;
   });
 }
 
@@ -400,7 +414,7 @@ export async function fetchSheetData() {
     const getEvent = (r) => (getRowValue(r, 'event') || r.event || '').toLowerCase();
     const eventRow = (r) => {
       const ev = getEvent(r);
-      return ev === 'random' || ev === 'destination_lighthouse' || ev === 'destination_demon' || ev === 'final' || /fight/i.test(ev);
+      return ev === 'random' || ev === 'market' || ev === 'destination_lighthouse' || ev === 'destination_demon' || ev === 'final' || /fight/i.test(ev);
     };
     const eventRows = mainRows.filter(eventRow);
     let intro = parseIntroFromRows(mainRows);

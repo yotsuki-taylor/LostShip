@@ -1,5 +1,5 @@
 import React from 'react';
-import { NODE_STATUS, NODE_TYPE, getNodeStatus, getReachableNodeIds } from '../utils/mapUtils';
+import { NODE_STATUS, NODE_TYPE, getNodeStatus, getReachableNodeIds, ensureBidirectionalEdges } from '../utils/mapUtils';
 
 const NODE_RADIUS = 24;
 const ICON_SIZE = 40;
@@ -21,7 +21,9 @@ export function MapView({ mapState, onNodeClick }) {
   if (!mapState?.nodes?.length) return null;
 
   const { nodes, edges, currentNodeId, visitedIds, nodeTypes = {} } = mapState;
-  const reachableIds = getReachableNodeIds(currentNodeId, mapState.edges ?? []);
+  const visitedSet = visitedIds instanceof Set ? visitedIds : new Set(visitedIds ?? []);
+  const edgesBidi = ensureBidirectionalEdges(nodes, edges ?? []);
+  const reachableIds = getReachableNodeIds(currentNodeId, edgesBidi);
 
   const width = 800;
   const height = 560;
@@ -36,7 +38,7 @@ export function MapView({ mapState, onNodeClick }) {
     >
       {/* Рёбра: пройденный (но не возможный) — зелёный, возможный (в т.ч. пройденный) — жёлтый */}
       <g strokeWidth="1.5" fill="none">
-        {(mapState.edges ?? []).map(([fromId, toId], i) => {
+        {edgesBidi.map(([fromId, toId], i) => {
           const from = nodes.find((n) => n.id === fromId);
           const to = nodes.find((n) => n.id === toId);
           if (!from || !to) return null;
@@ -44,8 +46,8 @@ export function MapView({ mapState, onNodeClick }) {
           const y1 = scaleY(from.y);
           const x2 = scaleX(to.x);
           const y2 = scaleY(to.y);
-          const fromVisited = visitedIds?.has(fromId) || fromId === currentNodeId;
-          const toVisited = visitedIds?.has(toId);
+          const fromVisited = visitedSet.has(fromId) || fromId === currentNodeId;
+          const toVisited = visitedSet.has(toId);
           const toReachable = reachableIds.has(toId);
           const isPassedPath = fromVisited && toVisited;
           const isPossiblePath = fromId === currentNodeId && toReachable;
@@ -67,7 +69,7 @@ export function MapView({ mapState, onNodeClick }) {
 
       {/* Узлы */}
       {nodes.map((node) => {
-        const status = getNodeStatus(node.id, currentNodeId, visitedIds ?? new Set(), reachableIds);
+        const status = getNodeStatus(node.id, currentNodeId, visitedSet, reachableIds);
         const cx = scaleX(node.x);
         const cy = scaleY(node.y);
         const isClickable = status === NODE_STATUS.REACHABLE || (status === NODE_STATUS.VISITED && reachableIds.has(node.id));
@@ -78,8 +80,8 @@ export function MapView({ mapState, onNodeClick }) {
         const isReturnToVisited = status === NODE_STATUS.VISITED && reachableIds.has(node.id);
 
         if (status === NODE_STATUS.CURRENT) {
-          fill = 'rgb(251, 191, 36)';
-          stroke = 'rgb(245, 158, 11)';
+          fill = 'rgb(34, 211, 238)';
+          stroke = 'rgb(6, 182, 212)';
           r = NODE_RADIUS + 2;
         } else if (status === NODE_STATUS.REACHABLE) {
           fill = 'rgba(251, 191, 36, 0.4)';
@@ -112,10 +114,7 @@ export function MapView({ mapState, onNodeClick }) {
               aria-label={status === NODE_STATUS.CURRENT ? 'Текущая позиция' : status === NODE_STATUS.REACHABLE ? `Прыгнуть к узлу ${node.id}` : undefined}
             />
             {status === NODE_STATUS.CURRENT && (
-              <>
-                <circle cx={cx} cy={cy} r={r * 0.68} fill="rgb(39, 39, 42)" />
-                <circle cx={cx} cy={cy} r={r + 4} fill="none" stroke="rgba(251, 191, 36, 0.5)" strokeWidth="2" className="animate-pulse" />
-              </>
+              <circle cx={cx} cy={cy} r={r + 4} fill="none" stroke="rgba(34, 211, 238, 0.5)" strokeWidth="2" className="animate-pulse" pointerEvents="none" />
             )}
             {showIcon && iconSrc && (
               <image
@@ -125,6 +124,7 @@ export function MapView({ mapState, onNodeClick }) {
                 width={ICON_SIZE}
                 height={ICON_SIZE}
                 preserveAspectRatio="xMidYMid meet"
+                pointerEvents="none"
               />
             )}
           </g>

@@ -34,8 +34,7 @@ export function MapPopup({ mapState, onNodeClick, onClose }) {
           </span>
           <span className="flex items-center gap-2">
             <svg width="20" height="20" viewBox="0 0 52 52" className="shrink-0">
-              <circle cx="26" cy="26" r="24" fill="rgb(251, 191, 36)" stroke="rgb(245, 158, 11)" strokeWidth="2" />
-              <circle cx="26" cy="26" r="16.3" fill="rgb(39, 39, 42)" />
+              <circle cx="26" cy="26" r="24" fill="rgb(34, 211, 238)" stroke="rgb(6, 182, 212)" strokeWidth="2" />
             </svg>
             Актуальная локация
           </span>
