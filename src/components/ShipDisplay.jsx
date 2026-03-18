@@ -9,7 +9,8 @@ const STARS = [
 
 const WARP_DURATION_MS = 1000;
 
-/** Смещения для разброса партиклов (px от центра) */
+/** Смещения для разброса партиклов (px от центра). Сдвиг вниз — по корпусу, не по парусам */
+const DAMAGE_OFFSET_Y = 14;
 const DAMAGE_OFFSETS = [[-10, 6], [8, -8], [-6, -10]];
 
 /** Эффект получения урона — три партикла damage.png по очереди с наложением, поверх корабля */
@@ -29,7 +30,7 @@ function DamageParticles({ trigger }) {
             style={{
               animationDelay: `${i * 120}ms`,
               left: `calc(50% + ${dx}px)`,
-              top: `calc(50% + ${dy}px)`,
+              top: `calc(50% + ${DAMAGE_OFFSET_Y + dy}px)`,
             }}
           />
         );
@@ -76,82 +77,120 @@ export function ShipDisplay({ isWarping = false, onWarpEnd, enemy, playerHitTrig
         ))}
       </div>
 
-      {/* Корабль и враг: варп или bob */}
-      <div className="absolute inset-0 flex items-center justify-between px-4">
-        <div className="flex-1" />
-        <div className="flex-1 flex items-center justify-center relative">
-        <DamageParticles trigger={playerHitTrigger} />
-        {isWarping && (
+      {/* Корабль и враг: варп или bob. В бою — игрок слева, враг справа; иначе — игрок по центру */}
+      <div className={`absolute inset-0 flex items-center px-4 ${enemy ? 'justify-between' : 'justify-center'}`}>
+        {enemy ? (
           <>
-            <div
-              className="absolute w-24 h-24 rounded-full animate-warp-flash"
-              style={{
-                background: 'radial-gradient(circle, rgba(34,211,238,0.9) 0%, rgba(34,211,238,0.4) 30%, transparent 70%)',
-                boxShadow: '0 0 60px 20px rgba(34,211,238,0.5)',
-              }}
-              aria-hidden="true"
-            />
-            {[...Array(12)].map((_, i) => {
-              const angle = (i / 12) * Math.PI * 2;
-              const dist = 45;
-              const px = Math.cos(angle) * dist;
-              const py = Math.sin(angle) * dist;
-              return (
+            <div className="flex-1 flex items-center justify-center relative">
+              <DamageParticles trigger={playerHitTrigger} />
+              {isWarping && (
+                <>
+                  <div
+                    className="absolute w-24 h-24 rounded-full animate-warp-flash"
+                    style={{
+                      background: 'radial-gradient(circle, rgba(34,211,238,0.9) 0%, rgba(34,211,238,0.4) 30%, transparent 70%)',
+                      boxShadow: '0 0 60px 20px rgba(34,211,238,0.5)',
+                    }}
+                    aria-hidden="true"
+                  />
+                  {[...Array(12)].map((_, i) => {
+                    const angle = (i / 12) * Math.PI * 2;
+                    const dist = 45;
+                    const px = Math.cos(angle) * dist;
+                    const py = Math.sin(angle) * dist;
+                    return (
+                      <div
+                        key={i}
+                        className="absolute left-1/2 top-1/2 w-1.5 h-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-cyan-400/90 animate-warp-particle"
+                        style={{
+                          '--px': `${px}px`,
+                          '--py': `${py}px`,
+                          animationDelay: `${i * 25}ms`,
+                        }}
+                        aria-hidden="true"
+                      />
+                    );
+                  })}
+                </>
+              )}
+              <img
+                src={`${import.meta.env.BASE_URL}images/ship.png`}
+                alt="Корабль"
+                className={`h-20 w-auto object-contain relative z-10 ${isWarping ? 'animate-ship-warp' : 'animate-ship-bob'}`}
+              />
+            </div>
+            <div className="flex-1 flex items-center justify-center relative">
+              <DamageParticles trigger={enemyHitTrigger} />
+              <div className="flex flex-col items-center">
+                <img
+                  src={(() => {
+                    const icon = enemy.icon?.trim();
+                    if (!icon) return `${import.meta.env.BASE_URL}images/enemy.png`;
+                    if (icon.startsWith('http')) return icon;
+                    const path = icon.includes('/') ? icon : `images/${icon}${icon.includes('.') ? '' : '.png'}`;
+                    return `${import.meta.env.BASE_URL}${path}`;
+                  })()}
+                  alt={enemy.name || 'Враг'}
+                  className="h-20 w-auto object-contain animate-ship-bob"
+                  onError={(e) => {
+                    e.target.style.display = 'none';
+                  }}
+                />
+                {enemy.hp != null && (
+                  <div className="mt-1 w-20">
+                    <div className="h-2 bg-zinc-700 rounded overflow-hidden border border-zinc-600">
+                      <div
+                        className="h-full bg-red-500 transition-all duration-300"
+                        style={{
+                          width: `${Math.min(100, Math.max(0, (enemy.hp / ((enemy.maxHp ?? enemy.hp) || 1)) * 100))}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="flex items-center justify-center relative">
+            <DamageParticles trigger={playerHitTrigger} />
+            {isWarping && (
+              <>
                 <div
-                  key={i}
-                  className="absolute left-1/2 top-1/2 w-1.5 h-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-cyan-400/90 animate-warp-particle"
+                  className="absolute w-24 h-24 rounded-full animate-warp-flash"
                   style={{
-                    '--px': `${px}px`,
-                    '--py': `${py}px`,
-                    animationDelay: `${i * 25}ms`,
+                    background: 'radial-gradient(circle, rgba(34,211,238,0.9) 0%, rgba(34,211,238,0.4) 30%, transparent 70%)',
+                    boxShadow: '0 0 60px 20px rgba(34,211,238,0.5)',
                   }}
                   aria-hidden="true"
                 />
-              );
-            })}
-          </>
-        )}
-        <img
-          src={`${import.meta.env.BASE_URL}images/ship.png`}
-          alt="Корабль"
-          className={`h-20 w-auto object-contain relative z-10 ${isWarping ? 'animate-ship-warp' : 'animate-ship-bob'}`}
-        />
-        </div>
-        <div className="flex-1 flex items-center justify-center relative">
-          {enemy && (
-            <>
-            <DamageParticles trigger={enemyHitTrigger} />
-            <div className="flex flex-col items-center">
-              <img
-                src={(() => {
-                  const icon = enemy.icon?.trim();
-                  if (!icon) return `${import.meta.env.BASE_URL}images/enemy.png`;
-                  if (icon.startsWith('http')) return icon;
-                  const path = icon.includes('/') ? icon : `images/${icon}${icon.includes('.') ? '' : '.png'}`;
-                  return `${import.meta.env.BASE_URL}${path}`;
-                })()}
-                alt={enemy.name || 'Враг'}
-                className="h-20 w-auto object-contain animate-ship-bob"
-                onError={(e) => {
-                  e.target.style.display = 'none';
-                }}
-              />
-              {enemy.hp != null && (
-                <div className="mt-1 w-20">
-                  <div className="h-2 bg-zinc-700 rounded overflow-hidden border border-zinc-600">
+                {[...Array(12)].map((_, i) => {
+                  const angle = (i / 12) * Math.PI * 2;
+                  const dist = 45;
+                  const px = Math.cos(angle) * dist;
+                  const py = Math.sin(angle) * dist;
+                  return (
                     <div
-                      className="h-full bg-red-500 transition-all duration-300"
+                      key={i}
+                      className="absolute left-1/2 top-1/2 w-1.5 h-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-cyan-400/90 animate-warp-particle"
                       style={{
-                        width: `${Math.min(100, Math.max(0, (enemy.hp / ((enemy.maxHp ?? enemy.hp) || 1)) * 100))}%`,
+                        '--px': `${px}px`,
+                        '--py': `${py}px`,
+                        animationDelay: `${i * 25}ms`,
                       }}
+                      aria-hidden="true"
                     />
-                  </div>
-                </div>
-              )}
-            </div>
-            </>
-          )}
-        </div>
+                  );
+                })}
+              </>
+            )}
+            <img
+              src={`${import.meta.env.BASE_URL}images/ship.png`}
+              alt="Корабль"
+              className={`h-20 w-auto object-contain relative z-10 ${isWarping ? 'animate-ship-warp' : 'animate-ship-bob'}`}
+            />
+          </div>
+        )}
       </div>
     </div>
   );

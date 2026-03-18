@@ -373,6 +373,7 @@ export default function App() {
         const fightData = fights[Math.floor(Math.random() * fights.length)];
         const initialEnemyHp = Math.max(0, fightData.hp ?? 0);
         const startEvent = fightData.eventStart ? findEventByIdOrTitle(fightData.eventStart) : null;
+        setEnemyHitTrigger(0);
         setCurrentFight(fightData);
         setCombatTurn(startEvent ? 0 : 1);
         setEnemyHp(initialEnemyHp);
@@ -488,6 +489,7 @@ export default function App() {
             ? (riskOutcome === 'success' ? choice.successEnemyDamage : choice.failureEnemyDamage)
             : choice.enemyDamage;
           const initialEnemyHp = Math.max(0, fightData.hp - (enemyDamageFromChoice ?? 0));
+          setEnemyHitTrigger(0);
           if ((enemyDamageFromChoice ?? 0) > 0) setEnemyHitTrigger((t) => t + 1);
           const riskSuffix = riskOutcome ? ` (${riskOutcome === 'success' ? 'успех' : 'провал'})` : '';
           const deltaStr = formatDeltaForLog(finalDelta);
@@ -572,6 +574,7 @@ export default function App() {
       setPlayerVars((prev) => ({ ...prev, fight: win ? 'win' : 'lose' }));
       setCurrentFight(null);
       setEnemyHp(0);
+      setEnemyHitTrigger(0);
       setPendingFightEnd(null);
       setPendingCombatAction(null);
       setCombatEvent(null);
