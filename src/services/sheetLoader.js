@@ -14,11 +14,14 @@ const CREW_GID = '21323879';
 const INTRO_GID = '';
 /** gid листа Fights — боевая система */
 const FIGHTS_GID = '905768052';
+/** gid листа CriticalPenalties — штрафы при падении ресурса до 0 (req=supplies=0|energy=0|morale=0, consequences=JSON) */
+const CRITICAL_PENALTIES_GID = '1591727777';
 
 const SHIP_STATS_URL = SHIP_STATS_GID ? `${SHEET_BASE}&gid=${SHIP_STATS_GID}` : null;
 const CREW_URL = CREW_GID ? `${SHEET_BASE}&gid=${CREW_GID}` : null;
 const INTRO_URL = INTRO_GID ? `${SHEET_BASE}&gid=${INTRO_GID}` : null;
 const FIGHTS_URL = FIGHTS_GID ? `${SHEET_BASE}&gid=${FIGHTS_GID}` : null;
+const CRITICAL_PENALTIES_URL = CRITICAL_PENALTIES_GID ? `${SHEET_BASE}&gid=${CRITICAL_PENALTIES_GID}` : null;
 
 const FETCH_RETRIES = 3;
 const FETCH_RETRY_DELAY_MS = 800;
@@ -398,6 +401,16 @@ export function matchesEventReq(eventReq, playerVars, resources = {}) {
   });
 }
 
+/** Выбирает critical-ивент для ресурса (supplies, energy, morale). event_req должен совпадать: supplies=0, energy=0, morale=0 */
+export function pickCriticalEvent(events, resourceType, resources, playerVars) {
+  if (!events?.length || !resourceType) return null;
+  const req = `${resourceType}=0`;
+  const pool = events.filter(
+    (e) => (e?.event || '').toLowerCase() === 'critical' && matchesEventReq(req, playerVars, resources)
+  );
+  return pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : null;
+}
+
 function parseIntroFromRows(rows) {
   const getEvent = (r) => (getRowValue(r, 'event') || r.event || '').toLowerCase();
   const introRows = rows.filter((r) => getEvent(r) === 'intro').sort((a, b) => (getRowValue(a, 'id') || a.id || 0) - (getRowValue(b, 'id') || b.id || 0));
@@ -414,7 +427,7 @@ export async function fetchSheetData() {
     const getEvent = (r) => (getRowValue(r, 'event') || r.event || '').toLowerCase();
     const eventRow = (r) => {
       const ev = getEvent(r);
-      return ev === 'random' || ev === 'market' || ev === 'destination_lighthouse' || ev === 'destination_demon' || ev === 'final' || /fight/i.test(ev);
+      return ev === 'random' || ev === 'market' || ev === 'critical' || ev === 'destination_lighthouse' || ev === 'destination_demon' || ev === 'final' || /fight/i.test(ev);
     };
     const eventRows = mainRows.filter(eventRow);
     let intro = parseIntroFromRows(mainRows);
@@ -625,5 +638,44 @@ export async function fetchFights() {
   } catch (e) {
     console.warn('[SheetLoader] Fights fetch failed:', e.message);
     return [];
+  }
+}
+
+/** Дефолтные штрафы при падении ресурса до 0 (если таблица недоступна) */
+export const DEFAULT_CRITICAL_PENALTIES = {
+  supplies: { morale: -10, hull: -5 },
+  energy: {},
+  morale: { hull: -5 },
+};
+
+/** Парсит таблицу CriticalPenalties: req (supplies=0, energy=0, morale=0), consequences (JSON с дельтой) */
+export async function fetchCriticalPenalties() {
+  if (!CRITICAL_PENALTIES_URL) return DEFAULT_CRITICAL_PENALTIES;
+  try {
+    const text = await fetchWithRetry(CRITICAL_PENALTIES_URL, { headers: { Accept: 'text/csv' } });
+    const rows = parseCSV(text);
+    if (rows.length < 2) return DEFAULT_CRITICAL_PENALTIES;
+
+    const result = { supplies: {}, energy: {}, morale: {} };
+    const reqCol = findCol(rows[0]._headers || Object.keys(rows[0]).filter((k) => !k.startsWith('_')), ['req', 'условие', 'condition']);
+    const consCol = findCol(rows[0]._headers || Object.keys(rows[0]).filter((k) => !k.startsWith('_')), ['consequences', 'последствия', 'consequence', 'штраф', 'penalty']);
+
+    if (reqCol < 0 || consCol < 0) return DEFAULT_CRITICAL_PENALTIES;
+
+    const headers = rows[0]._headers || Object.keys(rows[0]).filter((k) => !k.startsWith('_'));
+    for (const row of rows) {
+      const reqRaw = (row._values?.[reqCol] ?? row[headers[reqCol]] ?? '').toString().trim();
+      const consRaw = (row._values?.[consCol] ?? row[headers[consCol]] ?? '').toString().trim();
+      const match = reqRaw.match(/^(supplies|energy|morale)\s*[=<>]/i);
+      if (!match) continue;
+      const resource = match[1].toLowerCase();
+      const consequences = parseConsequences(consRaw);
+      const { delta } = consequences ? splitConsequences(consequences) : { delta: {} };
+      result[resource] = delta && Object.keys(delta).length > 0 ? delta : {};
+    }
+    return result;
+  } catch (e) {
+    console.warn('[SheetLoader] CriticalPenalties fetch failed:', e.message);
+    return DEFAULT_CRITICAL_PENALTIES;
   }
 }

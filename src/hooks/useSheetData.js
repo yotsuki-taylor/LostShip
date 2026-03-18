@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { fetchSheetData, fetchShipStats, fetchCrew, fetchFights, DEFAULT_SHIP_STATS } from '../services/sheetLoader';
+import { fetchSheetData, fetchShipStats, fetchCrew, fetchFights, fetchCriticalPenalties, DEFAULT_SHIP_STATS, DEFAULT_CRITICAL_PENALTIES } from '../services/sheetLoader';
 import eventsJson from '../data/events.json';
 import fightsJson from '../data/fights.json';
 import { normalizeEvents } from '../data/events';
@@ -59,11 +59,12 @@ export function useSheetData() {
 
   const load = useCallback(async () => {
     try {
-      const [data, shipStats, crew, fights] = await Promise.all([
+      const [data, shipStats, crew, fights, criticalPenalties] = await Promise.all([
         fetchSheetData(),
         fetchShipStats(),
         fetchCrew(),
         fetchFights().catch(() => []),
+        fetchCriticalPenalties().catch(() => DEFAULT_CRITICAL_PENALTIES),
       ]);
       setSheetData((prev) => {
         const preserved = data ?? (prev?.events?.length ? { intro: prev.intro ?? [], events: prev.events } : null);
@@ -75,18 +76,20 @@ export function useSheetData() {
               shipStats: shipStats ?? prev?.shipStats ?? DEFAULT_SHIP_STATS,
               crew: mergedCrew,
               fights: mergedFights,
+              criticalPenalties: criticalPenalties ?? prev?.criticalPenalties ?? DEFAULT_CRITICAL_PENALTIES,
             }
           : {
               shipStats: shipStats ?? DEFAULT_SHIP_STATS,
               crew: mergedCrew,
               fights: mergedFights,
+              criticalPenalties: criticalPenalties ?? prev?.criticalPenalties ?? DEFAULT_CRITICAL_PENALTIES,
             };
       });
       setError(null);
     } catch (e) {
       setError(e.message);
       // При сетевых сбоях не теряем уже загруженные события из таблицы.
-      setSheetData((prev) => prev ?? { shipStats: DEFAULT_SHIP_STATS, crew: [], fights: fightsJson ?? [] });
+      setSheetData((prev) => prev ?? { shipStats: DEFAULT_SHIP_STATS, crew: [], fights: fightsJson ?? [], criticalPenalties: DEFAULT_CRITICAL_PENALTIES });
     } finally {
       setLoading(false);
     }
@@ -121,6 +124,11 @@ export function useSheetData() {
       .map((ref) => localEvents.find((le) => findInEvents(le, ref)))
       .filter(Boolean);
     events = [...events, ...toAdd];
+  }
+  const hasCritical = events.some((e) => (e?.event || '').toLowerCase() === 'critical');
+  if (!hasCritical) {
+    const criticalFromLocal = localEvents.filter((e) => (e?.event || '').toLowerCase() === 'critical');
+    events = [...events, ...criticalFromLocal];
   }
 
   // Если события из таблицы пришли без вариантов — подставляем choices только при точном совпадении title
@@ -163,6 +171,7 @@ export function useSheetData() {
     shipStats: sheetData?.shipStats ?? DEFAULT_SHIP_STATS,
     crew: sheetData?.crew ?? [],
     fights: (sheetData?.fights?.length ? sheetData.fights : fightsJson) ?? [],
+    criticalPenalties: sheetData?.criticalPenalties ?? DEFAULT_CRITICAL_PENALTIES,
     loading,
     error,
     fromSheet: !!sheetData?.events?.length,

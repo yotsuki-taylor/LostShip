@@ -2,7 +2,7 @@ import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react'
 import { getResourceLimits, getResourceLabels, RESOURCE_UNITS, DELTA_KEYS, STATUS_VAR_KEYS, applyDeltas, applyDifficultyToDeltas, normalizeDeltaToNewFormat, FIXED_SPEED, FIXED_ATTACK } from './utils/resourceHelpers';
 import { saveGame, loadGame, hasSave, clearSave, migrateResources } from './utils/saveGame';
 import { createInitialMapState, performJump, serializeMapState, deserializeMapState, isExitNode, NODE_TYPE, rollNodeType } from './utils/mapUtils';
-import { matchesEventReq, pickCrewNames } from './services/sheetLoader';
+import { matchesEventReq, pickCrewNames, pickCriticalEvent } from './services/sheetLoader';
 import { useSheetData } from './hooks/useSheetData';
 import { DEFAULT_SHIP_STATS } from './services/sheetLoader';
 import { InfoPanel } from './components/InfoPanel';
@@ -166,7 +166,7 @@ function applyPassiveCrewEffects(rawCrew, currentResources, limits) {
 }
 
 export default function App() {
-  const { events, introSlides, shipStats, crew, fights, fromSheet, loading } = useSheetData();
+  const { events, introSlides, shipStats, crew, fights, criticalPenalties, fromSheet, loading } = useSheetData();
   const audioRef = useRef(null);
 
   const [showMenu, setShowMenu] = useState(true);
@@ -196,6 +196,24 @@ export default function App() {
   const [playerHitTrigger, setPlayerHitTrigger] = useState(0);
   const [enemyHitTrigger, setEnemyHitTrigger] = useState(0);
   const [screenShake, setScreenShake] = useState(false);
+  const [currentCriticalResource, setCurrentCriticalResource] = useState(null);
+
+  const getCriticalResource = useCallback((afterResources, pv) => {
+    const check = (key) => (afterResources[key] ?? 0) <= 0 && !pv[`critical_${key}_0`];
+    if (check('supplies')) return 'supplies';
+    if (check('energy')) return 'energy';
+    if (check('morale')) return 'morale';
+    return null;
+  }, []);
+
+  useEffect(() => {
+    if (!resources) return;
+    const toClear = {};
+    if ((resources.supplies ?? 0) > 0 && playerVars.critical_supplies_0) toClear.critical_supplies_0 = false;
+    if ((resources.energy ?? 0) > 0 && playerVars.critical_energy_0) toClear.critical_energy_0 = false;
+    if ((resources.morale ?? 0) > 0 && playerVars.critical_morale_0) toClear.critical_morale_0 = false;
+    if (Object.keys(toClear).length > 0) setPlayerVars((p) => ({ ...p, ...toClear }));
+  }, [resources?.supplies, resources?.energy, resources?.morale, playerVars.critical_supplies_0, playerVars.critical_energy_0, playerVars.critical_morale_0]);
 
   useEffect(() => {
     if (playerHitTrigger <= 0) return;
@@ -342,11 +360,23 @@ export default function App() {
     const nextCrew = passiveApplied.crew;
     const afterPassiveResources = passiveApplied.resources;
     const jumpCost = { supplies: -5 };
-    if ((afterPassiveResources.supplies ?? 0) <= 0) {
-      jumpCost.morale = -10;
-      jumpCost.hull = -5;
+    let tickResources = applyDeltas(afterPassiveResources, jumpCost, limits);
+    let criticalRes = getCriticalResource(tickResources, playerVars);
+    const jumpPenalties = {};
+    if (criticalRes !== 'supplies' && (tickResources.supplies ?? 0) <= 0 && playerVars.critical_supplies_0) {
+      Object.assign(jumpPenalties, criticalPenalties?.supplies ?? {});
     }
-    const tickResources = applyDeltas(afterPassiveResources, jumpCost, limits);
+    if (criticalRes !== 'energy' && (tickResources.energy ?? 0) <= 0 && playerVars.critical_energy_0) {
+      Object.assign(jumpPenalties, criticalPenalties?.energy ?? {});
+    }
+    if (criticalRes !== 'morale' && (tickResources.morale ?? 0) <= 0 && playerVars.critical_morale_0) {
+      Object.assign(jumpPenalties, criticalPenalties?.morale ?? {});
+    }
+    if (Object.keys(jumpPenalties).length > 0) {
+      Object.assign(jumpCost, jumpPenalties);
+      tickResources = applyDeltas(afterPassiveResources, jumpCost, limits);
+      criticalRes = getCriticalResource(tickResources, playerVars);
+    }
     const jumpHullDamage = (jumpCost.hull ?? 0) < 0 ? Math.abs(Math.round(jumpCost.hull)) : 0;
     const finalCrew = jumpHullDamage > 0 ? distributeHullDamageToCrew(nextCrew, jumpHullDamage) : nextCrew;
 
@@ -362,8 +392,8 @@ export default function App() {
         ? `Возврат к узлу ${targetNodeId}.${calmDelta}`
         : `Прыжок к узлу ${targetNodeId}.${calmDelta}`;
     let newEventLog = [...eventLog.slice(-5), jumpMsg].slice(-5);
-    if ((afterPassiveResources.supplies ?? 0) <= 0) {
-      newEventLog = [...newEventLog.slice(-5), 'Экипаж голодает! Мораль и прочность корабля падают.'].slice(-5);
+    if (Object.keys(jumpPenalties).length > 0) {
+      newEventLog = [...newEventLog.slice(-5), 'Штрафы за критические ресурсы применены.'].slice(-5);
     }
 
     setEventLog(newEventLog);
@@ -378,7 +408,14 @@ export default function App() {
     let finalCombatTurn = combatTurn;
     let finalEnemyHp = enemyHp;
 
-    if (willShowEvent) {
+    if (criticalRes) {
+      const criticalEvent = pickCriticalEvent(events, criticalRes, tickResources, playerVars);
+      if (criticalEvent) {
+        setCurrentEvent(criticalEvent);
+        setCurrentCriticalResource(criticalRes);
+        setIsEventActive(true);
+      }
+    } else if (willShowEvent) {
       const nodeTypes = nextMapState.nodeTypes ?? {};
       let nodeType = nodeTypes[targetNodeId];
       if (nodeType == null) {
@@ -458,7 +495,7 @@ export default function App() {
       combatTurn: finalCombatTurn,
       enemyHp: finalEnemyHp,
     });
-  }, [mapState, gameCrew, resources, limits, turn, playerVars, events, fights, pickStoryEvent, pickRandomEvent, pickMarketEvent, isDestinationEvent, nextDestByDestination, shownEventIds, getEventKey, eventLog, currentFight, combatTurn, enemyHp, findEventByIdOrTitle]);
+  }, [mapState, gameCrew, resources, limits, turn, playerVars, events, fights, pickStoryEvent, pickRandomEvent, pickMarketEvent, pickCriticalEvent, isDestinationEvent, nextDestByDestination, shownEventIds, getEventKey, eventLog, currentFight, combatTurn, enemyHp, findEventByIdOrTitle, getCriticalResource, criticalPenalties]);
 
   const handleChoice = useCallback(
     (choiceOrIndex) => {
@@ -497,13 +534,42 @@ export default function App() {
 
       let afterChoice = applyDeltas(resources, finalDelta, limits);
       let finalCrew = nextCrew;
-      if ((afterChoice.morale ?? 0) <= 0) {
-        const moralePenalty = { hull: -5 };
-        afterChoice = applyDeltas(afterChoice, moralePenalty, limits);
-        const moraleHullDamage = 5;
-        finalCrew = distributeHullDamageToCrew(nextCrew, moraleHullDamage);
+      const mergedPlayerVars = setVariable ? { ...playerVars, ...setVariable } : playerVars;
+
+      if (currentCriticalResource) {
+        const resVal = afterChoice[currentCriticalResource] ?? 0;
+        const criticalVars = resVal <= 0 ? { [`critical_${currentCriticalResource}_0`]: true } : {};
+        if (resVal <= 0) {
+          const penalty = criticalPenalties?.[currentCriticalResource];
+          if (penalty && Object.keys(penalty).length > 0) {
+            afterChoice = applyDeltas(afterChoice, penalty, limits);
+            const penaltyHull = (penalty.hull ?? 0) < 0 ? Math.abs(Math.round(penalty.hull)) : 0;
+            if (penaltyHull > 0) finalCrew = distributeHullDamageToCrew(finalCrew, penaltyHull);
+          }
+        }
+        setCurrentCriticalResource(null);
+        if (Object.keys(criticalVars).length > 0) setPlayerVars((p) => ({ ...p, ...(setVariable || {}), ...criticalVars }));
+        if (pendingFightEnd?.endEvent) setCombatEvent(pendingFightEnd.endEvent);
+      } else {
+        const nextCriticalRes = getCriticalResource(afterChoice, mergedPlayerVars);
+        if (nextCriticalRes) {
+          const criticalEvent = pickCriticalEvent(events, nextCriticalRes, afterChoice, mergedPlayerVars);
+          if (criticalEvent) {
+            setResources(afterChoice);
+            setGameCrew(nextCrew);
+            setCurrentEvent(criticalEvent);
+            setCurrentCriticalResource(nextCriticalRes);
+            if (setVariable) setPlayerVars(mergedPlayerVars);
+            setIsProcessing(false);
+            const riskSuffix = riskOutcome ? ` (${riskOutcome === 'success' ? 'успех' : 'провал'})` : '';
+            const deltaStr = formatDeltaForLog(finalDelta);
+            setEventLog((prev) => [...prev.slice(-5), `Ход ${turn + 1}: ${currentEvent.title} → "${choice.text}"${riskSuffix}${deltaStr}`].slice(-5));
+            return;
+          }
+        }
       }
-      const newPlayerVars = setVariable ? { ...playerVars, ...setVariable } : playerVars;
+
+      const newPlayerVars = setVariable ? mergedPlayerVars : playerVars;
       if (setVariable) setPlayerVars(newPlayerVars);
 
       const fightId = setVariable?.fight;
@@ -546,7 +612,6 @@ export default function App() {
           if (setVariable?.demon === 'захвачен') fightStartLog.push('Демон захвачен.');
           if (setVariable?.demon === 'подчинен') fightStartLog.push('Демон подчинён.');
           if (setVariable?.engine === 'работает') fightStartLog.push('Двигатель: работает.');
-          if ((afterChoice.morale ?? 0) <= 0) fightStartLog.push('Мораль на нуле! Прочность корабля падает.');
           const newEventLog = fightStartLog.slice(-5);
           setEventLog(newEventLog);
           saveGame({
@@ -577,10 +642,9 @@ export default function App() {
       if (setVariable?.demon === 'захвачен') logEntries.push('Демон захвачен.');
       if (setVariable?.demon === 'подчинен') logEntries.push('Демон подчинён.');
       if (setVariable?.engine === 'работает') logEntries.push('Двигатель: работает.');
-      if ((afterChoice.morale ?? 0) <= 0) logEntries.push('Мораль на нуле! Прочность корабля падает.');
       setEventLog(logEntries.slice(-5));
 
-      setTurn((t) => t + 1);
+      if (!pendingFightEnd) setTurn((t) => t + 1);
       setCurrentEvent(null);
       setIsEventActive(false);
       setIsProcessing(false);
@@ -605,7 +669,7 @@ export default function App() {
         });
       }
     },
-    [currentEvent, isProcessing, limits, resources, turn, eventLog, playerVars, gameCrew, mapState, nextDestByDestination, shownEventIds, fights, currentFight, combatTurn, enemyHp, findEventByIdOrTitle]
+    [currentEvent, isProcessing, limits, resources, turn, eventLog, playerVars, gameCrew, mapState, nextDestByDestination, shownEventIds, fights, currentFight, combatTurn, enemyHp, findEventByIdOrTitle, currentCriticalResource, criticalPenalties, getCriticalResource, pickCriticalEvent, events, pendingFightEnd]
   );
 
   const finishCombat = useCallback(
@@ -637,16 +701,11 @@ export default function App() {
       let nextCrew = hullDamage > 0 ? distributeHullDamageToCrew(gameCrew, hullDamage) : gameCrew;
       let afterCombatResources = { ...resources, hull: newHull };
       if (actionName === 'Атака') afterCombatResources = applyDeltas(afterCombatResources, { energy: -3 }, limits);
-      if ((afterCombatResources.morale ?? 0) <= 0) {
-        afterCombatResources = applyDeltas(afterCombatResources, { hull: -5 }, limits);
-        nextCrew = distributeHullDamageToCrew(nextCrew, 5);
-      }
       const finalHull = afterCombatResources.hull ?? 0;
       setEnemyHp(newEnemyHp);
       setResources(afterCombatResources);
-      if (hullDamage > 0 || (afterCombatResources.morale ?? 0) <= 0) setGameCrew(nextCrew);
+      if (hullDamage > 0) setGameCrew(nextCrew);
       let newEventLog = [...eventLog.slice(-5), `Ход ${combatTurn}: ${actionName}. Вы нанесли ${playerDamageDealt} урона, получили ${playerDamageTaken} урона.`].slice(-5);
-      if ((afterCombatResources.morale ?? 0) <= 0) newEventLog = [...newEventLog.slice(-5), 'Мораль на нуле! Прочность корабля падает.'].slice(-5);
       setEventLog(newEventLog);
       const combatEnded = newEnemyHp <= 0 || finalHull <= 0;
       if (combatEnded) {
@@ -771,17 +830,13 @@ export default function App() {
       const choiceHullDamage = (delta.hull ?? 0) < 0 ? Math.abs(Math.round(delta.hull)) : 0;
       let nextCrew = choiceHullDamage > 0 ? distributeHullDamageToCrew(gameCrew, choiceHullDamage) : gameCrew;
       let afterResources = applyDeltas(resources, delta, limits);
-      if ((afterResources.morale ?? 0) <= 0) {
-        afterResources = applyDeltas(afterResources, { hull: -5 }, limits);
-        nextCrew = distributeHullDamageToCrew(nextCrew, 5);
-      }
-      if (Object.keys(setVariable).length > 0) setPlayerVars((p) => ({ ...p, ...setVariable }));
+      const mergedCombatPlayerVars = Object.keys(setVariable).length > 0 ? { ...playerVars, ...setVariable } : playerVars;
+      if (Object.keys(setVariable).length > 0) setPlayerVars(mergedCombatPlayerVars);
 
       const combatLogEntries = [...eventLog.slice(-5), `Бой: ${combatEvent.title} → "${choice?.text || 'Продолжить'}"${riskSuffix}${deltaStr}`];
       if (setVariable?.demon === 'захвачен') combatLogEntries.push('Демон захвачен.');
       if (setVariable?.demon === 'подчинен') combatLogEntries.push('Демон подчинён.');
       if (setVariable?.engine === 'работает') combatLogEntries.push('Двигатель: работает.');
-      if ((afterResources.morale ?? 0) <= 0) combatLogEntries.push('Мораль на нуле! Прочность корабля падает.');
       setEventLog(combatLogEntries.slice(-5));
       setCombatEvent(null);
 
@@ -801,6 +856,38 @@ export default function App() {
 
         let finalResources = { ...afterResources, hull: newHull };
         if (actionName === 'Атака') finalResources = applyDeltas(finalResources, { energy: -3 }, limits);
+        const pendingCriticalRes = getCriticalResource(finalResources, mergedCombatPlayerVars);
+        if (pendingCriticalRes) {
+          const criticalEvent = pickCriticalEvent(events, pendingCriticalRes, finalResources, mergedCombatPlayerVars);
+          if (criticalEvent) {
+            setResources(finalResources);
+            setGameCrew(nextCrew);
+            setEnemyHp(newEnemyHp);
+            setCurrentEvent(criticalEvent);
+            setCurrentCriticalResource(pendingCriticalRes);
+            setEventLog((prev) => [...prev.slice(-5), `Ход ${combatTurn}: ${actionName}. Вы нанесли ${playerDamageDealt} урона, получили ${playerDamageTaken} урона.`].slice(-5));
+            if (newEnemyHp <= 0 || newHull <= 0) {
+              setPendingFightEnd({ win: newEnemyHp <= 0, endEvent: newEnemyHp <= 0 ? findEventByIdOrTitle(currentFight?.endFightEvent) : null });
+            } else {
+              setCombatTurn(combatTurn + 1);
+            }
+            saveGame({
+              resources: finalResources,
+              turn,
+              eventLog: [...combatLogEntries, `Ход ${combatTurn}: ${actionName}. Вы нанесли ${playerDamageDealt} урона, получили ${playerDamageTaken} урона.`].slice(-5),
+              stormProgress: 0,
+              playerVars: { ...mergedCombatPlayerVars, fight: newEnemyHp <= 0 ? 'win' : newHull <= 0 ? 'lose' : undefined },
+              crew: nextCrew,
+              mapState: mapState ? serializeMapState(mapState) : null,
+              nextDestByDestination,
+              shownEventIds,
+              currentFight: currentFight,
+              combatTurn: newEnemyHp <= 0 || newHull <= 0 ? combatTurn : combatTurn + 1,
+              enemyHp: newEnemyHp,
+            });
+            return;
+          }
+        }
         setResources(finalResources);
         setGameCrew(nextCrew);
         setEnemyHp(newEnemyHp);
@@ -851,6 +938,32 @@ export default function App() {
           });
         }
       } else {
+        const combatCriticalRes = getCriticalResource(afterResources, mergedCombatPlayerVars);
+        if (combatCriticalRes) {
+          const criticalEvent = pickCriticalEvent(events, combatCriticalRes, afterResources, mergedCombatPlayerVars);
+          if (criticalEvent) {
+            setResources(afterResources);
+            if (choiceHullDamage > 0) setGameCrew(nextCrew);
+            setCurrentEvent(criticalEvent);
+            setCurrentCriticalResource(combatCriticalRes);
+            setEventLog(combatLogEntries.slice(-5));
+            saveGame({
+              resources: afterResources,
+              turn,
+              eventLog: combatLogEntries.slice(-5),
+              stormProgress: 0,
+              playerVars: mergedCombatPlayerVars,
+              crew: nextCrew,
+              mapState: mapState ? serializeMapState(mapState) : null,
+              nextDestByDestination,
+              shownEventIds,
+              currentFight,
+              combatTurn,
+              enemyHp: Math.max(0, (enemyHp ?? 0) - choiceEnemyDamage),
+            });
+            return;
+          }
+        }
         if (choiceHullDamage > 0) setPlayerHitTrigger((t) => t + 1);
         if (choiceEnemyDamage > 0) setEnemyHitTrigger((t) => t + 1);
         setResources(afterResources);

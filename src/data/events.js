@@ -11,6 +11,7 @@ export function normalizeEvents(raw) {
     title: e.title,
     description: e.text,
     event: e.event ?? '',
+    event_req: e.event_req ?? '',
     choices: e.options.map((opt) => {
       const base = { optReq: opt.req || opt.optReq || null };
       if (opt.consequences) {
