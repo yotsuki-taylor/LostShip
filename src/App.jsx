@@ -352,7 +352,7 @@ export default function App() {
     if (targetNodeId == null || !mapState) return;
 
     const reachedExit = isExitNode(mapState.nodes, targetNodeId);
-    const nextMapState = reachedExit ? createInitialMapState() : performJump(mapState, targetNodeId);
+    const nextMapState = performJump(mapState, targetNodeId);
     if (!nextMapState) return;
 
     const isReturnToVisited = !reachedExit && mapState.visitedIds?.has(targetNodeId);
@@ -383,13 +383,13 @@ export default function App() {
     setGameCrew(finalCrew);
     setResources(tickResources);
 
-    const willShowEvent = events.length > 0 && !reachedExit && !isReturnToVisited;
+    const willShowEvent = events.length > 0 && !isReturnToVisited;
 
     const calmDelta = formatDeltaForLog(jumpCost);
-    const jumpMsg = reachedExit
-      ? `Переход в следующий кластер.${calmDelta}`
-      : isReturnToVisited
+    const jumpMsg = isReturnToVisited
         ? `Возврат к узлу ${targetNodeId}.${calmDelta}`
+      : reachedExit
+        ? `Прыжок к выходу.${calmDelta}`
         : `Прыжок к узлу ${targetNodeId}.${calmDelta}`;
     let newEventLog = [...eventLog.slice(-5), jumpMsg].slice(-5);
     if (Object.keys(jumpPenalties).length > 0) {
@@ -416,6 +416,147 @@ export default function App() {
         setIsEventActive(true);
       }
     } else if (willShowEvent) {
+      const nodeTypes = nextMapState.nodeTypes ?? {};
+      let nodeType = nodeTypes[targetNodeId];
+      if (nodeType == null) {
+        nodeType = rollNodeType();
+        finalMapState = { ...nextMapState, nodeTypes: { ...nodeTypes, [targetNodeId]: nodeType } };
+      }
+
+      const shownSet = new Set(shownEventIds);
+      if (nodeType === NODE_TYPE.COMBAT && !fights?.length) nodeType = NODE_TYPE.RANDOM;
+
+      if (nodeType === NODE_TYPE.COMBAT && fights?.length > 0) {
+        const fightData = fights[Math.floor(Math.random() * fights.length)];
+        const initialEnemyHp = Math.max(0, fightData.hp ?? 0);
+        const startEvent = fightData.eventStart ? findEventByIdOrTitle(fightData.eventStart) : null;
+        setEnemyHitTrigger(0);
+        setCurrentFight(fightData);
+        setCombatTurn(startEvent ? 0 : 1);
+        setEnemyHp(initialEnemyHp);
+        setCurrentEvent(null);
+        setIsEventActive(false);
+        setCombatEvent(startEvent || null);
+        finalCurrentFight = fightData;
+        finalCombatTurn = startEvent ? 0 : 1;
+        finalEnemyHp = initialEnemyHp;
+        newEventLog = [...newEventLog.slice(-5), `Бой начался: ${fightData.name}`].slice(-5);
+        setEventLog(newEventLog);
+      } else if (nodeType === NODE_TYPE.STORY) {
+        const event = pickStoryEvent(currentNextDestId, shownSet, turn);
+        if (event) {
+          setCurrentEvent(event);
+          setIsEventActive(true);
+          newShownIds = [...shownEventIds, getEventKey(event)];
+          setShownEventIds(newShownIds);
+          if (isDestinationEvent(event)) {
+            const nextId = (Number(event.id) || 0) + 1;
+            newNextDestByDest = { ...nextDestByDestination, [destKey]: nextId };
+            setNextDestByDestination(newNextDestByDest);
+          }
+        } else {
+          setEventLog((prev) => [...prev.slice(-5), '[Ошибка: не удалось выбрать сюжетное событие]'].slice(-5));
+        }
+      } else if (nodeType === NODE_TYPE.RANDOM) {
+        const event = pickRandomEvent(shownSet);
+        if (event) {
+          setCurrentEvent(event);
+          setIsEventActive(true);
+          newShownIds = [...shownEventIds, getEventKey(event)];
+          setShownEventIds(newShownIds);
+        } else {
+          setEventLog((prev) => [...prev.slice(-5), '[Ошибка: не удалось выбрать событие]'].slice(-5));
+        }
+      } else if (nodeType === NODE_TYPE.TRADE) {
+        const event = pickMarketEvent();
+        if (event) {
+          setCurrentEvent(event);
+          setIsEventActive(true);
+          newShownIds = [...shownEventIds, getEventKey(event)];
+          setShownEventIds(newShownIds);
+        } else {
+          setEventLog((prev) => [...prev.slice(-5), 'Рынок пуст.'].slice(-5));
+        }
+      }
+      setMapState(finalMapState);
+    }
+
+    saveGame({
+      resources: tickResources,
+      turn,
+      eventLog: newEventLog,
+      stormProgress: 0,
+      playerVars,
+      crew: finalCrew,
+      mapState: serializeMapState(finalMapState),
+      nextDestByDestination: newNextDestByDest,
+      shownEventIds: newShownIds,
+      currentFight: finalCurrentFight,
+      combatTurn: finalCombatTurn,
+      enemyHp: finalEnemyHp,
+    });
+  }, [mapState, gameCrew, resources, limits, turn, playerVars, events, fights, pickStoryEvent, pickRandomEvent, pickMarketEvent, pickCriticalEvent, isDestinationEvent, nextDestByDestination, shownEventIds, getEventKey, eventLog, currentFight, combatTurn, enemyHp, findEventByIdOrTitle, getCriticalResource, criticalPenalties]);
+
+  const handleClusterTransition = useCallback(() => {
+    if (isEventActive || isGameOver || isVictory || currentFight || !mapState) return;
+    const exitId = mapState.nodes?.find((n) => n.isExit)?.id;
+    if (exitId == null || mapState.currentNodeId !== exitId) return;
+
+    const nextMapState = createInitialMapState();
+    const targetNodeId = 0;
+
+    const passiveApplied = applyPassiveCrewEffects(gameCrew, resources, limits);
+    const nextCrew = passiveApplied.crew;
+    const afterPassiveResources = passiveApplied.resources;
+    const jumpCost = { supplies: -5 };
+    let tickResources = applyDeltas(afterPassiveResources, jumpCost, limits);
+    let criticalRes = getCriticalResource(tickResources, playerVars);
+    const jumpPenalties = {};
+    if (criticalRes !== 'supplies' && (tickResources.supplies ?? 0) <= 0 && playerVars.critical_supplies_0) {
+      Object.assign(jumpPenalties, criticalPenalties?.supplies ?? {});
+    }
+    if (criticalRes !== 'energy' && (tickResources.energy ?? 0) <= 0 && playerVars.critical_energy_0) {
+      Object.assign(jumpPenalties, criticalPenalties?.energy ?? {});
+    }
+    if (criticalRes !== 'morale' && (tickResources.morale ?? 0) <= 0 && playerVars.critical_morale_0) {
+      Object.assign(jumpPenalties, criticalPenalties?.morale ?? {});
+    }
+    if (Object.keys(jumpPenalties).length > 0) {
+      Object.assign(jumpCost, jumpPenalties);
+      tickResources = applyDeltas(afterPassiveResources, jumpCost, limits);
+      criticalRes = getCriticalResource(tickResources, playerVars);
+    }
+    const jumpHullDamage = (jumpCost.hull ?? 0) < 0 ? Math.abs(Math.round(jumpCost.hull)) : 0;
+    const finalCrew = jumpHullDamage > 0 ? distributeHullDamageToCrew(nextCrew, jumpHullDamage) : nextCrew;
+
+    setGameCrew(finalCrew);
+    setResources(tickResources);
+    setMapState(nextMapState);
+
+    const calmDelta = formatDeltaForLog(jumpCost);
+    let newEventLog = [...eventLog.slice(-5), `Переход в следующий кластер.${calmDelta}`].slice(-5);
+    if (Object.keys(jumpPenalties).length > 0) {
+      newEventLog = [...newEventLog.slice(-5), 'Штрафы за критические ресурсы применены.'].slice(-5);
+    }
+    setEventLog(newEventLog);
+
+    const destKey = playerVars.dest === 'lighthouse' ? 'lighthouse' : playerVars.dest === 'demon' ? 'demon' : 'lighthouse';
+    const currentNextDestId = nextDestByDestination[destKey] ?? 1;
+    let newNextDestByDest = { ...nextDestByDestination };
+    let newShownIds = shownEventIds;
+    let finalMapState = nextMapState;
+    let finalCurrentFight = currentFight;
+    let finalCombatTurn = combatTurn;
+    let finalEnemyHp = enemyHp;
+
+    if (criticalRes) {
+      const criticalEvent = pickCriticalEvent(events, criticalRes, tickResources, playerVars);
+      if (criticalEvent) {
+        setCurrentEvent(criticalEvent);
+        setCurrentCriticalResource(criticalRes);
+        setIsEventActive(true);
+      }
+    } else if (events.length > 0) {
       const nodeTypes = nextMapState.nodeTypes ?? {};
       let nodeType = nodeTypes[targetNodeId];
       if (nodeType == null) {
@@ -1284,12 +1425,22 @@ export default function App() {
               type="button"
               disabled={isEventActive || isWarping}
               onClick={() => {
-                if (!mapState) setMapState(createInitialMapState());
-                setShowMapPopup(true);
+                const exitId = mapState?.nodes?.find((n) => n.isExit)?.id;
+                const isAtExit = exitId != null && mapState?.currentNodeId === exitId;
+                if (isAtExit) {
+                  handleClusterTransition();
+                } else {
+                  if (!mapState) setMapState(createInitialMapState());
+                  setShowMapPopup(true);
+                }
               }}
               className="flex-1 py-3 rounded border-2 border-amber-600 bg-amber-900/30 font-mono font-bold text-amber-400 hover:bg-amber-800/40 hover:border-amber-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-amber-600 disabled:hover:bg-amber-900/30 disabled:hover:text-amber-400"
             >
-              Совершить прыжок
+              {(() => {
+                const exitId = mapState?.nodes?.find((n) => n.isExit)?.id;
+                const isAtExit = exitId != null && mapState?.currentNodeId === exitId;
+                return isAtExit ? 'В следующий кластер' : 'Совершить прыжок';
+              })()}
             </button>
           </>
         )}

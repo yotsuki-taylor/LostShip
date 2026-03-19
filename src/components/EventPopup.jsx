@@ -4,16 +4,14 @@ import { formatDeltaForDisplay } from '../utils/resourceHelpers';
 
 /**
  * Модальное окно для событий — перекрывает экран, невозможно пропустить.
- * Фильтрует варианты по optReq (если задан).
+ * Варианты с невыполненным optReq показываются, но неактивны.
  */
 export function EventPopup({ event, onChoice, disabled, playerVars = {}, resources = {} }) {
   if (!event) return null;
 
-  const visibleChoices = (event.choices || [])
-    .map((c, i) => ({ ...c, _idx: i }))
-    .filter((c) => !c.optReq || matchesEventReq(c.optReq, playerVars, resources));
-
-  const choicesToShow = visibleChoices.length > 0 ? visibleChoices : [{ text: 'Продолжить', _idx: -1, delta: {} }];
+  const choicesToShow = (event.choices || []).length > 0
+    ? (event.choices || []).map((c, i) => ({ ...c, _idx: i }))
+    : [{ text: 'Продолжить', _idx: -1, delta: {} }];
 
   return (
     <div
@@ -34,11 +32,13 @@ export function EventPopup({ event, onChoice, disabled, playerVars = {}, resourc
           {choicesToShow.map((choice, idx) => {
             const isRisk = choice.chance != null && choice.success != null && choice.failure != null;
             const deltaStr = !isRisk && choice.delta ? formatDeltaForDisplay(choice.delta) : '';
+            const reqMet = !choice.optReq || matchesEventReq(choice.optReq, playerVars, resources);
+            const isDisabled = disabled || !reqMet;
             return (
               <button
                 key={idx}
                 type="button"
-                disabled={disabled}
+                disabled={isDisabled}
                 onClick={() => onChoice(choice)}
                 className="block w-full text-left px-4 py-3 rounded border-2 border-zinc-600 bg-zinc-800/90 font-mono hover:border-amber-500 hover:bg-zinc-700/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >

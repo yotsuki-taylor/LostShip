@@ -93,10 +93,9 @@ export function MapView({ mapState, onNodeClick }) {
 
         const isExplored = status === NODE_STATUS.VISITED || status === NODE_STATUS.CURRENT;
         const nodeType = nodeTypes[node.id];
-        const isPortalNode = node.id === 0 || node.isExit;
-        const iconName = isPortalNode ? 'map_icon_portal' : (nodeType && NODE_TYPE_ICONS[nodeType]);
+        const iconName = nodeType && NODE_TYPE_ICONS[nodeType];
         const iconSrc = iconName ? `${import.meta.env.BASE_URL}images/${iconName}.png` : null;
-        const showIcon = isPortalNode || (isExplored && iconSrc);
+        const showIcon = isExplored && iconSrc;
 
         return (
           <g key={node.id}>

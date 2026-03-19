@@ -1,4 +1,5 @@
 import React from 'react';
+import { formatDeltaForDisplay } from '../utils/resourceHelpers';
 
 /**
  * Попап интро — стиль как у событий. При выборе вызывается onNext(choice) с setVariable.
@@ -22,17 +23,21 @@ export function IntroPopup({ slide, onNext }) {
         </h2>
         <p className="text-zinc-300 mb-6 leading-relaxed whitespace-pre-wrap">{slide.text}</p>
         <div className="space-y-3">
-          {(slide.choices?.length ? slide.choices : [{ text: 'Продолжить', setVariable: null }]).map((choice, idx) => (
-            <button
-              key={idx}
-              type="button"
-              onClick={() => onNext(choice)}
-              className="block w-full text-left px-4 py-3 rounded border-2 border-zinc-600 bg-zinc-800/90 font-mono hover:border-amber-500 hover:bg-zinc-700/90 transition-colors"
-            >
-              <span className="text-zinc-500 select-none">[{idx + 1}] </span>
-              {choice.text}
-            </button>
-          ))}
+          {(slide.choices?.length ? slide.choices : [{ text: 'Продолжить', setVariable: null }]).map((choice, idx) => {
+            const deltaStr = choice.delta ? formatDeltaForDisplay(choice.delta) : '';
+            return (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => onNext(choice)}
+                className="block w-full text-left px-4 py-3 rounded border-2 border-zinc-600 bg-zinc-800/90 font-mono hover:border-amber-500 hover:bg-zinc-700/90 transition-colors"
+              >
+                <span className="text-zinc-500 select-none">[{idx + 1}] </span>
+                {choice.text}
+                {deltaStr && <span className="block text-xs text-zinc-500 mt-1">{deltaStr}</span>}
+              </button>
+            );
+          })}
         </div>
       </div>
     </div>
