@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 
 /** Координаты звёзд (x%, y%) и размер (1–2) */
 const STARS = [
@@ -47,13 +47,25 @@ function DamageParticles({ trigger }) {
  * @param {object} enemy - { icon, name, hp, maxHp? } — враг справа при бое
  * @param {number} playerHitTrigger - инкрементируется при получении урона игроком
  * @param {number} enemyHitTrigger - инкрементируется при нанесении урона врагу
+ * @param {number} ramTrigger - инкрементируется при таране (корабль врезается во врага и отлетает)
  */
-export function ShipDisplay({ isWarping = false, onWarpEnd, enemy, playerHitTrigger = 0, enemyHitTrigger = 0 }) {
+const RAM_ANIMATION_MS = 400;
+
+export function ShipDisplay({ isWarping = false, onWarpEnd, enemy, playerHitTrigger = 0, enemyHitTrigger = 0, ramTrigger = 0 }) {
+  const [ramActive, setRamActive] = useState(false);
+
   useEffect(() => {
     if (!isWarping || !onWarpEnd) return;
     const t = setTimeout(onWarpEnd, WARP_DURATION_MS);
     return () => clearTimeout(t);
   }, [isWarping, onWarpEnd]);
+
+  useEffect(() => {
+    if (ramTrigger <= 0) return;
+    setRamActive(true);
+    const t = setTimeout(() => setRamActive(false), RAM_ANIMATION_MS);
+    return () => clearTimeout(t);
+  }, [ramTrigger]);
 
   return (
     <div className="mb-2 relative overflow-hidden rounded-lg border-2 border-zinc-600 h-32 bg-black">
@@ -116,7 +128,7 @@ export function ShipDisplay({ isWarping = false, onWarpEnd, enemy, playerHitTrig
               <img
                 src={`${import.meta.env.BASE_URL}images/ship.png`}
                 alt="Корабль"
-                className={`h-20 w-auto object-contain relative z-10 ${isWarping ? 'animate-ship-warp' : 'animate-ship-bob'}`}
+                className={`h-20 w-auto object-contain relative z-10 ${ramActive ? 'animate-ship-ram' : isWarping ? 'animate-ship-warp' : 'animate-ship-bob'}`}
               />
             </div>
             <div className="flex-1 flex items-center justify-center relative">

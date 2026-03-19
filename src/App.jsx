@@ -195,7 +195,9 @@ export default function App() {
   const [pendingCombatAction, setPendingCombatAction] = useState(null);
   const [playerHitTrigger, setPlayerHitTrigger] = useState(0);
   const [enemyHitTrigger, setEnemyHitTrigger] = useState(0);
+  const [ramTrigger, setRamTrigger] = useState(0);
   const [screenShake, setScreenShake] = useState(false);
+  const [ramShake, setRamShake] = useState(false);
   const [currentCriticalResource, setCurrentCriticalResource] = useState(null);
 
   const getCriticalResource = useCallback((afterResources, pv) => {
@@ -221,6 +223,13 @@ export default function App() {
     const t = setTimeout(() => setScreenShake(false), 350);
     return () => clearTimeout(t);
   }, [playerHitTrigger]);
+
+  useEffect(() => {
+    if (ramTrigger <= 0) return;
+    setRamShake(true);
+    const t = setTimeout(() => setRamShake(false), 500);
+    return () => clearTimeout(t);
+  }, [ramTrigger]);
   const pendingJumpRef = useRef(null);
 
   const getEventKey = useCallback((e) => `${(e?.event || '').toLowerCase()}-${e?.id ?? e?.title ?? ''}`, []);
@@ -832,8 +841,9 @@ export default function App() {
   );
 
   const runCombatTurn = useCallback(
-    (playerDamageDealt, playerDamageTaken, actionName) => {
+    (playerDamageDealt, playerDamageTaken, actionName, customLogMessage) => {
       if (!currentFight) return;
+      if (actionName === 'Таран') setRamTrigger((t) => t + 1);
       if (playerDamageTaken > 0) setPlayerHitTrigger((t) => t + 1);
       if (playerDamageDealt > 0) setEnemyHitTrigger((t) => t + 1);
       const newEnemyHp = Math.max(0, enemyHp - playerDamageDealt);
@@ -846,13 +856,14 @@ export default function App() {
       setEnemyHp(newEnemyHp);
       setResources(afterCombatResources);
       if (hullDamage > 0) setGameCrew(nextCrew);
-      let newEventLog = [...eventLog.slice(-5), `Ход ${combatTurn}: ${actionName}. Вы нанесли ${playerDamageDealt} урона, получили ${playerDamageTaken} урона.`].slice(-5);
+      const logEntry = customLogMessage ?? `Ход ${combatTurn}: ${actionName}. Вы нанесли ${playerDamageDealt} урона, получили ${playerDamageTaken} урона.`;
+      let newEventLog = [...eventLog.slice(-5), logEntry].slice(-5);
       setEventLog(newEventLog);
       const combatEnded = newEnemyHp <= 0 || finalHull <= 0;
       if (combatEnded) {
         const endEventRef = currentFight.endFightEvent;
         const endEvent = findEventByIdOrTitle(endEventRef);
-        const won = newEnemyHp <= 0;
+        const won = newEnemyHp <= 0 && finalHull > 0;
         setPendingFightEnd({ win: won, endEvent });
         const endPlayerVars = { ...playerVars, fight: won ? 'win' : 'lose' };
         if (endEvent) {
@@ -911,10 +922,16 @@ export default function App() {
       let playerDamageDealt = 0;
       let playerDamageTaken = enemyDamage;
       let actionName = '';
+      let customLogMessage = null;
 
       if (action === 'attack') {
         playerDamageDealt = rollNd6(2);
         actionName = 'Атака';
+      } else if (action === 'ram') {
+        playerDamageDealt = 10;
+        playerDamageTaken = enemyDamage + 5;
+        actionName = 'Таран';
+        customLogMessage = `Энергия на нуле! Идем на таран! Вы нанесли 10 урона, получили ${enemyDamage} урона от залпа врага и 5 урона за столкновение.`;
       } else if (action === 'dodge') {
         const dodgeRoll = Math.random();
         if (dodgeRoll < 0.5) playerDamageTaken = 0;
@@ -940,14 +957,14 @@ export default function App() {
       if (Math.random() < 0.5 && turnEventRef) {
         const ev = findEventByIdOrTitle(turnEventRef);
         if (ev) {
-          setPendingCombatAction({ playerDamageDealt, playerDamageTaken, actionName });
+          setPendingCombatAction({ playerDamageDealt, playerDamageTaken, actionName, customLogMessage });
           setCombatEvent(ev);
           setIsProcessing(false);
           return;
         }
       }
 
-      runCombatTurn(playerDamageDealt, playerDamageTaken, actionName);
+      runCombatTurn(playerDamageDealt, playerDamageTaken, actionName, customLogMessage);
       setIsProcessing(false);
     },
     [currentFight, combatTurn, isProcessing, playerVars.demon, resources.energy, runCombatTurn, findEventByIdOrTitle]
@@ -985,7 +1002,8 @@ export default function App() {
       setPendingCombatAction(null);
 
       if (pending) {
-        const { playerDamageDealt, playerDamageTaken, actionName } = pending;
+        const { playerDamageDealt, playerDamageTaken, actionName, customLogMessage } = pending;
+        if (actionName === 'Таран') setRamTrigger((t) => t + 1);
         if (playerDamageTaken > 0 || choiceHullDamage > 0) setPlayerHitTrigger((t) => t + 1);
         if (playerDamageDealt > 0 || choiceEnemyDamage > 0) setEnemyHitTrigger((t) => t + 1);
 
@@ -1006,18 +1024,20 @@ export default function App() {
             setEnemyHp(newEnemyHp);
             setCurrentEvent(criticalEvent);
             setCurrentCriticalResource(pendingCriticalRes);
-            setEventLog((prev) => [...prev.slice(-5), `Ход ${combatTurn}: ${actionName}. Вы нанесли ${playerDamageDealt} урона, получили ${playerDamageTaken} урона.`].slice(-5));
+            const pendingLogEntry = customLogMessage ?? `Ход ${combatTurn}: ${actionName}. Вы нанесли ${playerDamageDealt} урона, получили ${playerDamageTaken} урона.`;
+            setEventLog((prev) => [...prev.slice(-5), pendingLogEntry].slice(-5));
             if (newEnemyHp <= 0 || newHull <= 0) {
-              setPendingFightEnd({ win: newEnemyHp <= 0, endEvent: newEnemyHp <= 0 ? findEventByIdOrTitle(currentFight?.endFightEvent) : null });
+              const won = newEnemyHp <= 0 && newHull > 0;
+              setPendingFightEnd({ win, endEvent: won ? findEventByIdOrTitle(currentFight?.endFightEvent) : null });
             } else {
               setCombatTurn(combatTurn + 1);
             }
             saveGame({
               resources: finalResources,
               turn,
-              eventLog: [...combatLogEntries, `Ход ${combatTurn}: ${actionName}. Вы нанесли ${playerDamageDealt} урона, получили ${playerDamageTaken} урона.`].slice(-5),
+              eventLog: [...combatLogEntries, pendingLogEntry].slice(-5),
               stormProgress: 0,
-              playerVars: { ...mergedCombatPlayerVars, fight: newEnemyHp <= 0 ? 'win' : newHull <= 0 ? 'lose' : undefined },
+              playerVars: { ...mergedCombatPlayerVars, fight: (newEnemyHp <= 0 && newHull > 0) ? 'win' : (newHull <= 0 ? 'lose' : undefined) },
               crew: nextCrew,
               mapState: mapState ? serializeMapState(mapState) : null,
               nextDestByDestination,
@@ -1032,13 +1052,14 @@ export default function App() {
         setResources(finalResources);
         setGameCrew(nextCrew);
         setEnemyHp(newEnemyHp);
-        setEventLog((prev) => [...prev.slice(-5), `Ход ${combatTurn}: ${actionName}. Вы нанесли ${playerDamageDealt} урона, получили ${playerDamageTaken} урона.`].slice(-5));
+        const mainLogEntry = customLogMessage ?? `Ход ${combatTurn}: ${actionName}. Вы нанесли ${playerDamageDealt} урона, получили ${playerDamageTaken} урона.`;
+        setEventLog((prev) => [...prev.slice(-5), mainLogEntry].slice(-5));
 
         const combatEnded = newEnemyHp <= 0 || newHull <= 0;
         if (combatEnded) {
           const endEventRef = currentFight?.endFightEvent;
           const endEvent = findEventByIdOrTitle(endEventRef);
-          const won = newEnemyHp <= 0;
+          const won = newEnemyHp <= 0 && newHull > 0;
           setPendingFightEnd({ win: won, endEvent });
           if (endEvent) {
             setPlayerVars((prev) => ({ ...prev, fight: won ? 'win' : 'lose' }));
@@ -1049,7 +1070,7 @@ export default function App() {
           saveGame({
             resources: finalResources,
             turn,
-            eventLog: [...eventLog.slice(-5), `Бой: ${combatEvent.title} → "${choice?.text || 'Продолжить'}"${riskSuffix}${deltaStr}`, `Ход ${combatTurn}: ${actionName}. Вы нанесли ${playerDamageDealt} урона, получили ${playerDamageTaken} урона.`].slice(-5),
+            eventLog: [...eventLog.slice(-5), `Бой: ${combatEvent.title} → "${choice?.text || 'Продолжить'}"${riskSuffix}${deltaStr}`, mainLogEntry].slice(-5),
             stormProgress: 0,
             playerVars: { ...playerVars, ...setVariable, fight: won ? 'win' : 'lose' },
             crew: nextCrew,
@@ -1066,7 +1087,7 @@ export default function App() {
           saveGame({
             resources: finalResources,
             turn,
-            eventLog: [...eventLog.slice(-5), `Бой: ${combatEvent.title} → "${choice?.text || 'Продолжить'}"${riskSuffix}${deltaStr}`, `Ход ${combatTurn}: ${actionName}. Вы нанесли ${playerDamageDealt} урона, получили ${playerDamageTaken} урона.`].slice(-5),
+            eventLog: [...eventLog.slice(-5), `Бой: ${combatEvent.title} → "${choice?.text || 'Продолжить'}"${riskSuffix}${deltaStr}`, mainLogEntry].slice(-5),
             stormProgress: 0,
             playerVars: { ...playerVars, ...setVariable },
             crew: nextCrew,
@@ -1331,7 +1352,7 @@ export default function App() {
   return (
     <>
       <audio ref={audioRef} src={MUSIC_PATH} loop preload="auto" muted={!musicEnabled} />
-      <div className={`min-h-screen bg-zinc-950 text-zinc-300 font-mono p-4 ${screenShake ? 'animate-screen-shake' : ''}`}>
+      <div className={`min-h-screen bg-zinc-950 text-zinc-300 font-mono p-4 ${ramShake ? 'animate-screen-shake-strong' : screenShake ? 'animate-screen-shake' : ''}`}>
       <header className="mb-2 flex justify-between items-center">
         <div className="flex items-center gap-3">
           <button
@@ -1370,6 +1391,7 @@ export default function App() {
         enemy={currentFight ? { icon: currentFight.icon, name: currentFight.name, hp: enemyHp, maxHp: currentFight.hp } : null}
         playerHitTrigger={playerHitTrigger}
         enemyHitTrigger={enemyHitTrigger}
+        ramTrigger={ramTrigger}
       />
 
       <InfoPanel playerVars={playerVars} resources={resources} />
@@ -1405,11 +1427,11 @@ export default function App() {
             </button>
             <button
               type="button"
-              disabled={isProcessing || !!combatEvent || (resources.energy ?? 0) < 3}
-              onClick={() => handleCombatAction('attack')}
+              disabled={isProcessing || !!combatEvent}
+              onClick={() => (resources.energy ?? 0) < 3 ? handleCombatAction('ram') : handleCombatAction('attack')}
               className="flex-1 py-3 rounded border-2 border-red-600 bg-red-900/30 font-mono font-bold text-red-400 hover:bg-red-800/40 hover:border-red-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Атака
+              {(resources.energy ?? 0) < 3 ? 'Таран' : 'Атака'}
             </button>
           </>
         ) : (
