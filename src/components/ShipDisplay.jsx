@@ -136,16 +136,33 @@ export function ShipDisplay({ isWarping = false, onWarpEnd, enemy, playerHitTrig
               <div className="flex flex-col items-center">
                 <img
                   src={(() => {
+                    const base = import.meta.env.BASE_URL;
                     const icon = enemy.icon?.trim();
-                    if (!icon) return `${import.meta.env.BASE_URL}images/enemy.png`;
+                    if (!icon) return `${base}images/enemy.png`;
                     if (icon.startsWith('http')) return icon;
-                    const path = icon.includes('/') ? icon : `images/${icon}${icon.includes('.') ? '' : '.png'}`;
-                    return `${import.meta.env.BASE_URL}${path}`;
+                    let path = icon.includes('/') ? icon : `images/${icon}${icon.includes('.') ? '' : '.png'}`;
+                    // Локальные файлы в public/images — на Linux регистр в URL важен (Kraken.png ≠ kraken.png)
+                    if (path.startsWith('images/')) {
+                      const slash = path.lastIndexOf('/');
+                      const file = path.slice(slash + 1);
+                      const i = file.lastIndexOf('.');
+                      if (i > 0) {
+                        path = `${path.slice(0, slash + 1)}${file.slice(0, i).toLowerCase()}${file.slice(i).toLowerCase()}`;
+                      } else {
+                        path = `${path.slice(0, slash + 1)}${file.toLowerCase()}`;
+                      }
+                    }
+                    return `${base}${path}`;
                   })()}
                   alt={enemy.name || 'Враг'}
                   className="h-20 w-auto object-contain animate-ship-bob"
                   onError={(e) => {
-                    e.target.style.display = 'none';
+                    const fallback = `${import.meta.env.BASE_URL}images/enemy.png`;
+                    if (e.currentTarget.src.endsWith('enemy.png')) {
+                      e.currentTarget.style.display = 'none';
+                    } else {
+                      e.currentTarget.src = fallback;
+                    }
                   }}
                 />
                 {enemy.hp != null && (

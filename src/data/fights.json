@@ -8,5 +8,15 @@
     "eventStart": "AirshipFight_0",
     "eventTurns": ["AirshipFight_1", "AirshipFight_2", "AirshipFight_3", "AirshipFight_4", "AirshipFight_5"],
     "endFightEvent": "AirshipFight_Finale"
+  },
+  {
+    "id": "Кракен",
+    "name": "Кракен",
+    "hp": 35,
+    "attackD6": 3,
+    "icon": "kraken.png",
+    "eventStart": "KrakenFight_0",
+    "eventTurns": ["KrakenFight_1", "KrakenFight_2", "KrakenFight_3", "KrakenFight_4", "KrakenFight_5"],
+    "endFightEvent": "KrakenFight_Finale"
   }
 ]

@@ -1,5 +1,50 @@
 import React from 'react';
 
+const CYAN = 'text-cyan-500/90 font-semibold';
+
+/** Подсветка фразы «Новое направление» в куске строки */
+function renderNewDirectionPhraseParts(segment, baseClass, keyPrefix) {
+  const parts = segment.split(/(новое направление)/gi);
+  return parts.map((part, idx) =>
+    /^новое направление$/i.test(part) ? (
+      <span key={`${keyPrefix}-${idx}`} className={CYAN}>
+        {part}
+      </span>
+    ) : (
+      <span key={`${keyPrefix}-${idx}`} className={baseClass}>
+        {part}
+      </span>
+    )
+  );
+}
+
+/**
+ * Для строк с «Новое направление»: заголовок и выбранный вариант после → "…" — голубые, как «Курс на».
+ */
+function renderWithNewDirectionHighlight(text, baseClass) {
+  if (!text || !/новое направление/i.test(text)) {
+    return <span className={baseClass}>{text}</span>;
+  }
+
+  const choiceMatch = text.match(/^(.*?)( → ")([^"]+)(")(.*)$/);
+  if (!choiceMatch) {
+    return <>{renderNewDirectionPhraseParts(text, baseClass, 'nd')}</>;
+  }
+
+  const [, before, arrowQuote, choice, closeQuote, after] = choiceMatch;
+  return (
+    <>
+      {renderNewDirectionPhraseParts(before, baseClass, 'nd-b')}
+      <span className={baseClass}>{arrowQuote}</span>
+      <span className={CYAN}>{choice}</span>
+      <span className={baseClass}>
+        {closeQuote}
+        {after}
+      </span>
+    </>
+  );
+}
+
 export function EventLog({ entries }) {
   return (
     <div className="terminal-panel p-3 font-mono flex flex-col h-full min-h-[200px] mb-2">
@@ -21,10 +66,11 @@ export function EventLog({ entries }) {
               text === 'Экипаж голодает! Мораль и прочность корабля падают.' ? 'text-red-500' :
               text === 'Штрафы за критические ресурсы применены.' ? 'text-red-500' :
               null;
+            const baseClass = colorClass ?? 'text-zinc-400';
             return (
               <div key={i} className="leading-relaxed">
                 <span className="text-zinc-600 select-none">&gt; </span>
-                <span className={colorClass ?? 'text-zinc-400'}>{text}</span>
+                {renderWithNewDirectionHighlight(text, baseClass)}
               </div>
             );
           })
