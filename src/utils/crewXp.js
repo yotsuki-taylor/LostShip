@@ -3,6 +3,14 @@
 export const XP_PER_LEVEL = 5;
 export const TEAM_XP_REWARD = 5;
 
+/** Живой боец: опыт начисляется только им. */
+export function isCrewMemberAlive(m) {
+  if (!m || typeof m !== 'object') return false;
+  if ((m.hp ?? 0) <= 0) return false;
+  if (m.status === 'убит') return false;
+  return true;
+}
+
 /** Нормализация члена команды из сохранения. */
 export function normalizeCrewMember(m) {
   if (!m || typeof m !== 'object') return m;
@@ -122,17 +130,9 @@ export function applyTeamXpReward(gameCrew, crewTemplateRows) {
   const logLines = [];
   let next = (gameCrew || []).map((m) => ({ ...normalizeCrewMember(m) }));
 
-  const aliveIdx = next.map((m, i) => ((m.hp ?? 0) > 0 ? i : -1)).filter((i) => i >= 0);
+  const aliveIdx = next.map((m, i) => (isCrewMemberAlive(m) ? i : -1)).filter((i) => i >= 0);
   if (aliveIdx.length === 0) {
     return { crew: next, logLines };
-  }
-
-  const gains = {};
-  for (let k = 0; k < TEAM_XP_REWARD; k++) {
-    const pick = aliveIdx[Math.floor(Math.random() * aliveIdx.length)];
-    const id = String(next[pick].id ?? pick);
-    gains[id] = (gains[id] ?? 0) + 1;
-    next[pick] = { ...next[pick], xp: (next[pick].xp ?? 0) + 1 };
   }
 
   const xpBefore = {};
@@ -140,20 +140,16 @@ export function applyTeamXpReward(gameCrew, crewTemplateRows) {
     xpBefore[String(m.id ?? '')] = m.xp ?? 0;
   });
 
-  Object.keys(gains).forEach((idKey) => {
-    const idx = next.findIndex((m) => String(m.id ?? '') === idKey);
-    if (idx >= 0) {
-      const n = gains[idKey];
-      const name = next[idx].name || 'Боец';
-      logLines.push(`${name} получил ${n} очков опыта`);
-    }
-  });
+  for (let k = 0; k < TEAM_XP_REWARD; k++) {
+    const pick = aliveIdx[Math.floor(Math.random() * aliveIdx.length)];
+    next[pick] = { ...next[pick], xp: (next[pick].xp ?? 0) + 1 };
+  }
 
   next.forEach((m) => {
     const id = String(m.id ?? '');
     const wasBelow = (xpBefore[id] ?? 0) < XP_PER_LEVEL;
     const nowOk = (m.xp ?? 0) >= XP_PER_LEVEL;
-    if (wasBelow && nowOk && (m.hp ?? 0) > 0) {
+    if (wasBelow && nowOk && isCrewMemberAlive(m)) {
       logLines.push(`${m.name || 'Боец'} готов к повышению уровня.`);
     }
   });
@@ -194,7 +190,7 @@ export function applyCrewMemberXpBySlug(gameCrew, crewMemberXpMap, _crewTemplate
     if (!Number.isFinite(amount) || amount === 0) return;
     const want = SLUG_NORM(slugRaw);
     const idx = next.findIndex((m) => {
-      if ((m.hp ?? 0) <= 0) return false;
+      if (!isCrewMemberAlive(m)) return false;
       const id = SLUG_NORM(m.id ?? '');
       const role = SLUG_NORM(m.role ?? '');
       return id === want || role === want;
@@ -205,17 +201,13 @@ export function applyCrewMemberXpBySlug(gameCrew, crewMemberXpMap, _crewTemplate
     const prev = m.xp ?? 0;
     m.xp = Math.max(0, prev + amount);
     next[idx] = m;
-
-    const name = m.name || 'Боец';
-    const sign = amount > 0 ? 'получил' : 'потерял';
-    logLines.push(`${name} ${sign} ${Math.abs(amount)} очков опыта`);
   });
 
   next.forEach((m) => {
     const id = String(m.id ?? '');
     const wasBelow = (xpBefore[id] ?? 0) < XP_PER_LEVEL;
     const nowOk = (m.xp ?? 0) >= XP_PER_LEVEL;
-    if (wasBelow && nowOk && (m.hp ?? 0) > 0) {
+    if (wasBelow && nowOk && isCrewMemberAlive(m)) {
       logLines.push(`${m.name || 'Боец'} готов к повышению уровня.`);
     }
   });
@@ -233,7 +225,7 @@ export function executeManualLevelUp(gameCrew, memberId, crewTemplateRows) {
   if (idx < 0) return { crew: gameCrew, logLines: [] };
 
   let m = { ...list[idx] };
-  if ((m.hp ?? 0) <= 0) return { crew: gameCrew, logLines: [] };
+  if (!isCrewMemberAlive(m)) return { crew: gameCrew, logLines: [] };
   if ((m.xp ?? 0) < XP_PER_LEVEL) return { crew: gameCrew, logLines: [] };
 
   const queue = [...(m.pendingLevelQueue || [])];

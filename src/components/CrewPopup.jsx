@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { XP_PER_LEVEL } from '../utils/crewXp';
+import { XP_PER_LEVEL, isCrewMemberAlive } from '../utils/crewXp';
 
 const MAX_HP = 20;
 
@@ -88,12 +88,13 @@ export function CrewPopup({
           {displayCrew.map((c) => {
             const idSlug = (c.id ?? 'unknown').toString().toLowerCase().replace(/[^a-z0-9а-яё_-]/gi, '_').replace(/_+/g, '_') || 'unknown';
             const avatarSrc = `/LostShip/images/${idSlug}.png`;
+            const alive = isCrewMemberAlive(c);
             const xp = Math.max(0, c.xp ?? 0);
             const xpFill = Math.min(xp, XP_PER_LEVEL) / XP_PER_LEVEL;
             const pendingSkill = c.pendingLevelChoice || (c.pendingLevelQueue && c.pendingLevelQueue[0]);
             const hasSkillPick = pendingSkill && (pendingSkill.opt1 || pendingSkill.opt2);
-            const canManualLevel = (c.hp ?? 0) > 0 && xp >= XP_PER_LEVEL;
-            const showLevelBtn = hasSkillPick || canManualLevel;
+            const canManualLevel = alive && xp >= XP_PER_LEVEL;
+            const showLevelBtn = alive && (hasSkillPick || canManualLevel);
 
             const handleLevelClick = (e) => {
               e.stopPropagation();
@@ -131,9 +132,13 @@ export function CrewPopup({
                 </div>
                 <div className="w-full h-1 bg-zinc-800 rounded-full overflow-hidden mb-2">
                   <div
-                    className="h-full bg-sky-500/90 transition-all"
+                    className={`h-full transition-all ${alive ? 'bg-sky-500/90' : 'bg-zinc-500/80'}`}
                     style={{ width: `${xpFill * 100}%` }}
-                    title={`Опыт: ${xp} (нужно ${XP_PER_LEVEL} для уровня)`}
+                    title={
+                      alive
+                        ? `Опыт: ${xp} (нужно ${XP_PER_LEVEL} для уровня)`
+                        : `Опыт: ${xp} (погибший — опыт не начисляется)`
+                    }
                   />
                 </div>
                 <div className="flex w-full items-center justify-center gap-1.5 gap-y-1 flex-wrap mb-0.5">
