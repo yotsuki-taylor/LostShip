@@ -57,6 +57,7 @@ export function EventLog({ entries }) {
         ) : (
           entries.map((line, i) => {
             const text = typeof line === 'object' ? line.text : line;
+            const isLevelUpLine = typeof text === 'string' && /готов к повышению уровня/i.test(text);
             const colorClass =
               text === 'Демон захвачен.' ? 'text-amber-400' :
               text === 'Демон подчинён.' ? 'text-emerald-500' :
@@ -70,7 +71,11 @@ export function EventLog({ entries }) {
             return (
               <div key={i} className="leading-relaxed">
                 <span className="text-zinc-600 select-none">&gt; </span>
-                {renderWithNewDirectionHighlight(text, baseClass)}
+                {isLevelUpLine ? (
+                  <span className={CYAN}>{text}</span>
+                ) : (
+                  renderWithNewDirectionHighlight(text, baseClass)
+                )}
               </div>
             );
           })

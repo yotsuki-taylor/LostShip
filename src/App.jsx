@@ -1,8 +1,27 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { getResourceLimits, getResourceLabels, RESOURCE_UNITS, DELTA_KEYS, STATUS_VAR_KEYS, applyDeltas, applyDifficultyToDeltas, normalizeDeltaToNewFormat, FIXED_SPEED, FIXED_ATTACK } from './utils/resourceHelpers';
 import { saveGame, loadGame, hasSave, clearSave, migrateResources } from './utils/saveGame';
-import { createInitialMapState, performJump, serializeMapState, deserializeMapState, isExitNode, NODE_TYPE, rollNodeType } from './utils/mapUtils';
+import {
+  createInitialMapState,
+  performJump,
+  serializeMapState,
+  deserializeMapState,
+  isExitNode,
+  NODE_TYPE,
+  rollNodeType,
+  ensureSurveyRevealTypes,
+} from './utils/mapUtils';
 import { matchesEventReq, pickCrewNames, pickCriticalEvent } from './services/sheetLoader';
+import {
+  applyTeamXpReward,
+  applyCrewMemberXpBySlug,
+  getCombatAttackBonus,
+  getTurnStartSkillResourceDelta,
+  getJumpSuppliesDiscount,
+  confirmLevelSkillChoice,
+  normalizeCrewMember,
+  executeManualLevelUp,
+} from './utils/crewXp';
 import { useSheetData } from './hooks/useSheetData';
 import { DEFAULT_SHIP_STATS } from './services/sheetLoader';
 import { InfoPanel } from './components/InfoPanel';
@@ -27,7 +46,36 @@ const INITIAL_PLAYER_VARS = {
   victory: null,
 };
 
+/** Побег в бою возможен только при подчинённом демоне (см. SHEET_FORMAT.md). */
+function isDemonSubordinate(demon) {
+  if (demon == null || demon === '') return false;
+  let s = String(demon).trim().replace(/^\uFEFF/, '').normalize('NFKC');
+  s = s.replace(/\s+/g, '').replace(/ё/gi, 'е').toLowerCase();
+  if (s === 'подчинен') return true;
+  // Редкий экспорт из таблиц: латиница вместо похожих кириллических букв
+  const deLatin = s
+    .replace(/e/g, 'е')
+    .replace(/o/g, 'о')
+    .replace(/a/g, 'а')
+    .replace(/p/g, 'р')
+    .replace(/c/g, 'с')
+    .replace(/x/g, 'х')
+    .replace(/y/g, 'у')
+    .replace(/m/g, 'м')
+    .replace(/t/g, 'т')
+    .replace(/h/g, 'н')
+    .replace(/n/g, 'н')
+    .replace(/i/g, 'и')
+    .replace(/d/g, 'д');
+  return deLatin === 'подчинен';
+}
+
 const COMBAT_EXTRA_LABELS = { enemy_damage: 'Урон врагу' };
+const FLEE_COST = { energy: -30, supplies: -30 };
+const FLEE_BUTTON_COST_TEXT = (() => {
+  const L = getResourceLabels();
+  return `${L.energy.toLowerCase()}: ${FLEE_COST.energy}, ${L.supplies.toLowerCase()}: ${FLEE_COST.supplies}`;
+})();
 
 function formatDeltaForLog(delta, extra = {}) {
   const combined = normalizeDeltaToNewFormat({ ...delta, ...extra });
@@ -97,8 +145,18 @@ function rollInitialCrewDamage(rawCrew) {
       ...member,
       hp: nextHp,
       status: getCrewStatusFromHp(nextHp),
+      xp: member.xp ?? 0,
+      level: member.level ?? 1,
+      skills: member.skills ?? [],
+      pendingLevelQueue: member.pendingLevelQueue ?? [],
+      pendingLevelChoice: member.pendingLevelChoice ?? null,
     };
   });
+}
+
+function buildJumpSuppliesCost(gameCrew) {
+  const discount = getJumpSuppliesDiscount(gameCrew);
+  return { supplies: -(Math.max(0, 5 - discount)) };
 }
 
 /** Распределяет урон по корпусу (hull: -N) случайным образом между живыми членами команды */
@@ -180,9 +238,22 @@ export default function App() {
   const [playerVars, setPlayerVars] = useState(INITIAL_PLAYER_VARS);
   const [showMapPopup, setShowMapPopup] = useState(false);
   const [showCrewPopup, setShowCrewPopup] = useState(false);
+  const [crewSkillModalMember, setCrewSkillModalMember] = useState(null);
   const [gameCrew, setGameCrew] = useState([]);
   const [pendingCrewInit, setPendingCrewInit] = useState(false);
   const [mapState, setMapState] = useState(null);
+  const mapSurvey = useMemo(
+    () => Math.max(0, Math.floor(Number(resources?.survey ?? DEFAULT_SHIP_STATS.survey ?? 0))),
+    [resources?.survey]
+  );
+
+  useEffect(() => {
+    if (!mapState) return;
+    if (mapSurvey <= 0) return;
+    const next = ensureSurveyRevealTypes(mapState, mapSurvey);
+    if (next !== mapState) setMapState(next);
+  }, [mapState, mapSurvey]);
+
   const [isWarping, setIsWarping] = useState(false);
   const [musicEnabled, setMusicEnabled] = useState(getMusicEnabled);
   const [nextDestByDestination, setNextDestByDestination] = useState({ lighthouse: 1, demon: 1 });
@@ -344,6 +415,23 @@ export default function App() {
     [events]
   );
 
+  const handleCrewManualLevelUp = useCallback(
+    (memberId) => {
+      const r = executeManualLevelUp(gameCrew, memberId, crew);
+      setGameCrew(r.crew);
+      if (r.logLines?.length) {
+        setEventLog((e) => [...e.slice(-5), ...r.logLines].slice(-5));
+      }
+      const mem = r.crew.find((m) => String(m.id) === String(memberId));
+      if (mem?.pendingLevelChoice && (mem.pendingLevelChoice.opt1 || mem.pendingLevelChoice.opt2)) {
+        setCrewSkillModalMember(mem);
+      } else {
+        setCrewSkillModalMember(null);
+      }
+    },
+    [crew, gameCrew]
+  );
+
   const handleMapNodeClick = useCallback(
     (targetNodeId) => {
       if (isEventActive || isGameOver || isVictory || currentFight || !mapState) return;
@@ -368,7 +456,7 @@ export default function App() {
     const passiveApplied = applyPassiveCrewEffects(gameCrew, resources, limits);
     const nextCrew = passiveApplied.crew;
     const afterPassiveResources = passiveApplied.resources;
-    const jumpCost = { supplies: -5 };
+    const jumpCost = buildJumpSuppliesCost(nextCrew);
     let tickResources = applyDeltas(afterPassiveResources, jumpCost, limits);
     let criticalRes = getCriticalResource(tickResources, playerVars);
     const jumpPenalties = {};
@@ -517,7 +605,7 @@ export default function App() {
     const passiveApplied = applyPassiveCrewEffects(gameCrew, resources, limits);
     const nextCrew = passiveApplied.crew;
     const afterPassiveResources = passiveApplied.resources;
-    const jumpCost = { supplies: -5 };
+    const jumpCost = buildJumpSuppliesCost(nextCrew);
     let tickResources = applyDeltas(afterPassiveResources, jumpCost, limits);
     let criticalRes = getCriticalResource(tickResources, playerVars);
     const jumpPenalties = {};
@@ -667,6 +755,11 @@ export default function App() {
       }
       delta = delta ?? {};
 
+      const crewMemberXpReward =
+        choice.chance != null && choice.success != null && choice.failure != null
+          ? (riskOutcome === 'success' ? choice.successCrewMemberXp : choice.failureCrewMemberXp)
+          : choice.crewMemberXp;
+
       const resourceDelta = {};
       const statusFromDelta = {};
       Object.entries(delta).forEach(([k, v]) => {
@@ -683,6 +776,10 @@ export default function App() {
       const nextCrew = hullDamage > 0 ? distributeHullDamageToCrew(gameCrew, hullDamage) : gameCrew;
 
       let afterChoice = applyDeltas(resources, finalDelta, limits);
+      const skillTurnDelta = getTurnStartSkillResourceDelta(gameCrew);
+      if (Object.keys(skillTurnDelta).length > 0) {
+        afterChoice = applyDeltas(afterChoice, skillTurnDelta, limits);
+      }
       let finalCrew = nextCrew;
       const mergedPlayerVars = setVariable ? { ...playerVars, ...setVariable } : playerVars;
 
@@ -706,14 +803,20 @@ export default function App() {
           const criticalEvent = pickCriticalEvent(events, nextCriticalRes, afterChoice, mergedPlayerVars);
           if (criticalEvent) {
             setResources(afterChoice);
-            setGameCrew(nextCrew);
+            const xpInd =
+              crewMemberXpReward && typeof crewMemberXpReward === 'object' && Object.keys(crewMemberXpReward).length > 0
+                ? applyCrewMemberXpBySlug(nextCrew, crewMemberXpReward, crew)
+                : { crew: nextCrew, logLines: [] };
+            setGameCrew(xpInd.crew);
             setCurrentEvent(criticalEvent);
             setCurrentCriticalResource(nextCriticalRes);
             if (setVariable) setPlayerVars(mergedPlayerVars);
             setIsProcessing(false);
             const riskSuffix = riskOutcome ? ` (${riskOutcome === 'success' ? 'успех' : 'провал'})` : '';
             const deltaStr = formatDeltaForLog(finalDelta);
-            setEventLog((prev) => [...prev.slice(-5), `Ход ${turn + 1}: ${currentEvent.title} → "${choice.text}"${riskSuffix}${deltaStr}`].slice(-5));
+            setEventLog((prev) =>
+              [...prev.slice(-5), `Ход ${turn + 1}: ${currentEvent.title} → "${choice.text}"${riskSuffix}${deltaStr}`, ...xpInd.logLines].slice(-5)
+            );
             return;
           }
         }
@@ -745,7 +848,11 @@ export default function App() {
           const riskSuffix = riskOutcome ? ` (${riskOutcome === 'success' ? 'успех' : 'провал'})` : '';
           const deltaStr = formatDeltaForLog(finalDelta);
           setResources(afterChoice);
-          setGameCrew(finalCrew);
+          const xpBeforeFight =
+            crewMemberXpReward && typeof crewMemberXpReward === 'object' && Object.keys(crewMemberXpReward).length > 0
+              ? applyCrewMemberXpBySlug(finalCrew, crewMemberXpReward, crew)
+              : { crew: finalCrew, logLines: [] };
+          setGameCrew(xpBeforeFight.crew);
           setCurrentEvent(null);
           setIsEventActive(false);
           setIsProcessing(false);
@@ -757,6 +864,7 @@ export default function App() {
           const fightStartLog = [
             ...eventLog.slice(-5),
             `Ход ${turn + 1}: ${currentEvent.title} → "${choice.text}"${riskSuffix}${deltaStr}`,
+            ...xpBeforeFight.logLines,
             `Бой начался: ${fightData.name}`,
           ];
           if (setVariable?.demon === 'захвачен') fightStartLog.push('Демон захвачен.');
@@ -770,7 +878,7 @@ export default function App() {
             eventLog: newEventLog,
             stormProgress: 0,
             playerVars: newPlayerVars,
-            crew: finalCrew,
+            crew: xpBeforeFight.crew,
             mapState: mapState ? serializeMapState(mapState) : null,
             nextDestByDestination,
             shownEventIds,
@@ -783,12 +891,29 @@ export default function App() {
         console.warn('[Combat] fightId=', JSON.stringify(fightId), 'setVariable=', setVariable, 'fights=', fights?.map((f) => f.id) ?? 'null', 'fightsCount=', fights?.length ?? 0);
       }
 
+      let crewForEvent = finalCrew;
+      let xpRewardLogs = [];
+      if (crewMemberXpReward && typeof crewMemberXpReward === 'object' && Object.keys(crewMemberXpReward).length > 0) {
+        const ind = applyCrewMemberXpBySlug(finalCrew, crewMemberXpReward, crew);
+        crewForEvent = ind.crew;
+        xpRewardLogs = [...ind.logLines];
+      }
+      if ((afterChoice.hull ?? 0) > 0) {
+        const xpResult = applyTeamXpReward(crewForEvent, crew);
+        crewForEvent = xpResult.crew;
+        xpRewardLogs = [...xpRewardLogs, ...xpResult.logLines];
+      }
+
       setResources(afterChoice);
-      setGameCrew(finalCrew);
+      setGameCrew(crewForEvent);
 
       const riskSuffix = riskOutcome ? ` (${riskOutcome === 'success' ? 'успех' : 'провал'})` : '';
       const deltaStr = formatDeltaForLog(finalDelta);
-      const logEntries = [...eventLog.slice(-5), `Ход ${turn + 1}: ${currentEvent.title} → "${choice.text}"${riskSuffix}${deltaStr}`];
+      const logEntries = [
+        ...eventLog.slice(-5),
+        `Ход ${turn + 1}: ${currentEvent.title} → "${choice.text}"${riskSuffix}${deltaStr}`,
+        ...xpRewardLogs,
+      ];
       if (setVariable?.demon === 'захвачен') logEntries.push('Демон захвачен.');
       if (setVariable?.demon === 'подчинен') logEntries.push('Демон подчинён.');
       if (setVariable?.engine === 'работает') logEntries.push('Двигатель: работает.');
@@ -809,7 +934,7 @@ export default function App() {
           eventLog: newEventLog,
           stormProgress: 0,
           playerVars: newPlayerVars,
-          crew: finalCrew,
+          crew: crewForEvent,
           mapState: mapState ? serializeMapState(mapState) : null,
           nextDestByDestination,
           shownEventIds,
@@ -819,26 +944,21 @@ export default function App() {
         });
       }
     },
-    [currentEvent, isProcessing, limits, resources, turn, eventLog, playerVars, gameCrew, mapState, nextDestByDestination, shownEventIds, fights, currentFight, combatTurn, enemyHp, findEventByIdOrTitle, currentCriticalResource, criticalPenalties, getCriticalResource, pickCriticalEvent, events, pendingFightEnd]
+    [currentEvent, isProcessing, limits, resources, turn, eventLog, playerVars, gameCrew, mapState, nextDestByDestination, shownEventIds, fights, currentFight, combatTurn, enemyHp, findEventByIdOrTitle, currentCriticalResource, criticalPenalties, getCriticalResource, pickCriticalEvent, events, pendingFightEnd, crew]
   );
 
-  const finishCombat = useCallback(
-    (win) => {
-      setPlayerVars((prev) => ({ ...prev, fight: win ? 'win' : 'lose' }));
-      setCurrentFight(null);
-      setEnemyHp(0);
-      setEnemyHitTrigger(0);
-      setPendingFightEnd(null);
-      setPendingCombatAction(null);
-      setCombatEvent(null);
-      if (!win) {
-        setEventLog((prev) => [...prev.slice(-5), 'Корабль уничтожен. Поражение.'].slice(-5));
-      } else {
-        setEventLog((prev) => [...prev.slice(-5), 'Враг повержен! Победа!'].slice(-5));
-      }
-    },
-    []
-  );
+  const finishCombat = useCallback((win) => {
+    setPlayerVars((prev) => ({ ...prev, fight: win ? 'win' : 'lose' }));
+    setCurrentFight(null);
+    setEnemyHp(0);
+    setEnemyHitTrigger(0);
+    setPendingFightEnd(null);
+    setPendingCombatAction(null);
+    setCombatEvent(null);
+    if (!win) {
+      setEventLog((prev) => [...prev.slice(-5), 'Корабль уничтожен. Поражение.'].slice(-5));
+    }
+  }, []);
 
   const runCombatTurn = useCallback(
     (playerDamageDealt, playerDamageTaken, actionName, customLogMessage) => {
@@ -864,6 +984,16 @@ export default function App() {
         const endEventRef = currentFight.endFightEvent;
         const endEvent = findEventByIdOrTitle(endEventRef);
         const won = newEnemyHp <= 0 && finalHull > 0;
+        let crewAfterCombat = nextCrew;
+        if (won) {
+          const r = applyTeamXpReward(nextCrew, crew);
+          crewAfterCombat = r.crew;
+          setGameCrew(r.crew);
+          newEventLog = [...eventLog.slice(-5), logEntry, 'Враг повержен! Победа!', ...r.logLines].slice(-5);
+          setEventLog(newEventLog);
+        } else if (hullDamage > 0) {
+          setGameCrew(nextCrew);
+        }
         setPendingFightEnd({ win: won, endEvent });
         const endPlayerVars = { ...playerVars, fight: won ? 'win' : 'lose' };
         if (endEvent) {
@@ -878,7 +1008,7 @@ export default function App() {
           eventLog: newEventLog,
           stormProgress: 0,
           playerVars: endPlayerVars,
-          crew: nextCrew,
+          crew: crewAfterCombat,
           mapState: mapState ? serializeMapState(mapState) : null,
           nextDestByDestination,
           shownEventIds,
@@ -907,7 +1037,7 @@ export default function App() {
         enemyHp: newEnemyHp,
       });
     },
-    [currentFight, enemyHp, resources, combatTurn, eventLog, mapState, playerVars, turn, nextDestByDestination, shownEventIds, findEventByIdOrTitle, finishCombat, gameCrew, limits]
+    [currentFight, enemyHp, resources, combatTurn, eventLog, mapState, playerVars, turn, nextDestByDestination, shownEventIds, findEventByIdOrTitle, finishCombat, gameCrew, limits, crew]
   );
 
   const handleCombatAction = useCallback(
@@ -917,6 +1047,13 @@ export default function App() {
         setEventLog((prev) => [...prev.slice(-5), 'Недостаточно энергии для атаки (нужно 3).'].slice(-5));
         return;
       }
+      if (action === 'flee') {
+        if (!isDemonSubordinate(playerVars.demon)) return;
+        if ((resources.energy ?? 0) < 30 || (resources.supplies ?? 0) < 30) {
+          setEventLog((prev) => [...prev.slice(-5), 'Недостаточно энергии или припасов для побега (нужно 30 энергии и 30 припасов).'].slice(-5));
+          return;
+        }
+      }
       setIsProcessing(true);
       const enemyDamage = rollNd6(currentFight.attackD6);
       let playerDamageDealt = 0;
@@ -925,7 +1062,7 @@ export default function App() {
       let customLogMessage = null;
 
       if (action === 'attack') {
-        playerDamageDealt = rollNd6(2);
+        playerDamageDealt = rollNd6(2) + getCombatAttackBonus(gameCrew);
         actionName = 'Атака';
       } else if (action === 'ram') {
         playerDamageDealt = 10;
@@ -938,15 +1075,34 @@ export default function App() {
         else playerDamageTaken = Math.floor(enemyDamage / 2);
         actionName = 'Уклонение';
       } else if (action === 'flee') {
-        const demonOk = playerVars.demon && playerVars.demon !== 'сбежал';
-        if (combatTurn >= 3 && demonOk) {
-          setCurrentFight(null);
-          setEnemyHp(0);
-          setPlayerVars((prev) => ({ ...prev, fight: 'win' }));
-          setEventLog((prev) => [...prev.slice(-5), `Ход ${combatTurn}: Сбежать. Вы сбежали с поля боя.`].slice(-5));
-          setIsProcessing(false);
-          return;
-        }
+        const afterFlee = applyDeltas(resources, FLEE_COST, limits);
+        const xpResult = applyTeamXpReward(gameCrew, crew);
+        const deltaStr = formatDeltaForLog(FLEE_COST);
+        const newEventLog = [
+          ...eventLog.slice(-5),
+          `Ход ${combatTurn}: Сбежать. Вы сбежали с поля боя.${deltaStr}`,
+          ...xpResult.logLines,
+        ].slice(-5);
+        setResources(afterFlee);
+        setGameCrew(xpResult.crew);
+        setCurrentFight(null);
+        setEnemyHp(0);
+        setPlayerVars((prev) => ({ ...prev, fight: 'win' }));
+        setEventLog(newEventLog);
+        saveGame({
+          resources: afterFlee,
+          turn,
+          eventLog: newEventLog,
+          stormProgress: 0,
+          playerVars: { ...playerVars, fight: 'win' },
+          crew: xpResult.crew,
+          mapState: mapState ? serializeMapState(mapState) : null,
+          nextDestByDestination,
+          shownEventIds,
+          currentFight: null,
+          combatTurn: 0,
+          enemyHp: 0,
+        });
         setIsProcessing(false);
         return;
       }
@@ -967,7 +1123,24 @@ export default function App() {
       runCombatTurn(playerDamageDealt, playerDamageTaken, actionName, customLogMessage);
       setIsProcessing(false);
     },
-    [currentFight, combatTurn, isProcessing, playerVars.demon, resources.energy, runCombatTurn, findEventByIdOrTitle]
+    [
+      currentFight,
+      combatTurn,
+      isProcessing,
+      playerVars.demon,
+      playerVars,
+      resources,
+      limits,
+      eventLog,
+      turn,
+      gameCrew,
+      mapState,
+      nextDestByDestination,
+      shownEventIds,
+      runCombatTurn,
+      findEventByIdOrTitle,
+      crew,
+    ]
   );
 
   const handleCombatEventChoice = useCallback(
@@ -1053,13 +1226,21 @@ export default function App() {
         setGameCrew(nextCrew);
         setEnemyHp(newEnemyHp);
         const mainLogEntry = customLogMessage ?? `Ход ${combatTurn}: ${actionName}. Вы нанесли ${playerDamageDealt} урона, получили ${playerDamageTaken} урона.`;
-        setEventLog((prev) => [...prev.slice(-5), mainLogEntry].slice(-5));
 
         const combatEnded = newEnemyHp <= 0 || newHull <= 0;
         if (combatEnded) {
           const endEventRef = currentFight?.endFightEvent;
           const endEvent = findEventByIdOrTitle(endEventRef);
           const won = newEnemyHp <= 0 && newHull > 0;
+          let crewAfter = nextCrew;
+          if (won) {
+            const r = applyTeamXpReward(nextCrew, crew);
+            crewAfter = r.crew;
+            setGameCrew(r.crew);
+            setEventLog((prev) => [...prev.slice(-5), mainLogEntry, 'Враг повержен! Победа!', ...r.logLines].slice(-5));
+          } else {
+            setEventLog((prev) => [...prev.slice(-5), mainLogEntry].slice(-5));
+          }
           setPendingFightEnd({ win: won, endEvent });
           if (endEvent) {
             setPlayerVars((prev) => ({ ...prev, fight: won ? 'win' : 'lose' }));
@@ -1073,7 +1254,7 @@ export default function App() {
             eventLog: [...eventLog.slice(-5), `Бой: ${combatEvent.title} → "${choice?.text || 'Продолжить'}"${riskSuffix}${deltaStr}`, mainLogEntry].slice(-5),
             stormProgress: 0,
             playerVars: { ...playerVars, ...setVariable, fight: won ? 'win' : 'lose' },
-            crew: nextCrew,
+            crew: crewAfter,
             mapState: mapState ? serializeMapState(mapState) : null,
             nextDestByDestination,
             shownEventIds,
@@ -1082,6 +1263,7 @@ export default function App() {
             enemyHp: 0,
           });
         } else {
+          setEventLog((prev) => [...prev.slice(-5), mainLogEntry].slice(-5));
           const nextTurn = combatTurn + 1;
           setCombatTurn(nextTurn);
           saveGame({
@@ -1155,6 +1337,9 @@ export default function App() {
         } else if (newEnemyHp <= 0) {
           const endEventRef = currentFight?.endFightEvent;
           const endEvent = findEventByIdOrTitle(endEventRef);
+          const r = applyTeamXpReward(nextCrew, crew);
+          setGameCrew(r.crew);
+          setEventLog((prev) => [...prev.slice(-5), 'Враг повержен! Победа!', ...r.logLines].slice(-5));
           setPendingFightEnd({ win: true, endEvent });
           if (endEvent) {
             setPlayerVars((prev) => ({ ...prev, fight: 'win' }));
@@ -1165,7 +1350,7 @@ export default function App() {
         }
       }
     },
-    [combatEvent, pendingFightEnd, pendingCombatAction, limits, finishCombat, gameCrew, resources, enemyHp, combatTurn, eventLog, currentFight, findEventByIdOrTitle, mapState, playerVars, turn, nextDestByDestination, shownEventIds]
+    [combatEvent, pendingFightEnd, pendingCombatAction, limits, finishCombat, gameCrew, resources, enemyHp, combatTurn, eventLog, currentFight, findEventByIdOrTitle, mapState, playerVars, turn, nextDestByDestination, shownEventIds, crew, events]
   );
 
   const handleIntroNext = useCallback(
@@ -1179,10 +1364,13 @@ export default function App() {
       if (choice?.delta && typeof choice.delta === 'object' && Object.keys(choice.delta).length > 0) {
         setResources((prev) => applyDeltas(prev, choice.delta, limits));
       }
+      if (choice?.crewMemberXp && typeof choice.crewMemberXp === 'object' && Object.keys(choice.crewMemberXp).length > 0) {
+        setGameCrew((prev) => applyCrewMemberXpBySlug(prev, choice.crewMemberXp, crew).crew);
+      }
       const nextStep = introStep + 1;
       setIntroStep(nextStep);
     },
-    [limits, introStep]
+    [limits, introStep, crew]
   );
 
   const handleNewGame = useCallback(() => {
@@ -1218,7 +1406,7 @@ export default function App() {
     setPlayerHitTrigger(0);
     setEnemyHitTrigger(0);
     setResources(withFixedShipStats(migrateResources(saved.resources) ?? shipStats ?? DEFAULT_SHIP_STATS));
-    setGameCrew(saved.crew ?? []);
+    setGameCrew((saved.crew ?? []).map(normalizeCrewMember));
     setPendingCrewInit(false);
     setMapState(deserializeMapState(saved.mapState) ?? createInitialMapState());
     setTurn(saved.turn ?? 0);
@@ -1226,7 +1414,7 @@ export default function App() {
     setCurrentEvent(null);
     setIsEventActive(false);
     setIsProcessing(false);
-    setPlayerVars(saved.playerVars ?? INITIAL_PLAYER_VARS);
+    setPlayerVars({ ...INITIAL_PLAYER_VARS, ...(saved.playerVars && typeof saved.playerVars === 'object' ? saved.playerVars : {}) });
     setNextDestByDestination(
       saved.nextDestByDestination ?? (saved.nextDestinationEventId != null ? { lighthouse: saved.nextDestinationEventId, demon: saved.nextDestinationEventId } : { lighthouse: 1, demon: 1 })
     );
@@ -1411,11 +1599,18 @@ export default function App() {
           <>
             <button
               type="button"
-              disabled={isProcessing || !!combatEvent || combatTurn < 3 || !playerVars.demon || playerVars.demon === 'сбежал'}
+              disabled={
+                isProcessing ||
+                !!combatEvent ||
+                !isDemonSubordinate(playerVars.demon) ||
+                (resources.energy ?? 0) < 30 ||
+                (resources.supplies ?? 0) < 30
+              }
               onClick={() => handleCombatAction('flee')}
-              className="flex-1 py-3 rounded border-2 border-zinc-600 bg-zinc-800/50 font-mono text-zinc-300 hover:border-amber-500 hover:text-amber-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 py-3 rounded border-2 border-zinc-600 bg-zinc-800/50 font-mono text-zinc-300 hover:border-amber-500 hover:text-amber-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex flex-col gap-0.5 leading-tight items-center justify-center"
             >
-              Сбежать
+              <span>Сбежать</span>
+              <span className="text-[10px] sm:text-xs text-zinc-500 font-normal">{FLEE_BUTTON_COST_TEXT}</span>
             </button>
             <button
               type="button"
@@ -1471,11 +1666,37 @@ export default function App() {
       {showMapPopup && mapState && (
         <MapPopup
           mapState={mapState}
+          survey={mapSurvey}
           onNodeClick={handleMapNodeClick}
           onClose={() => setShowMapPopup(false)}
         />
       )}
-      {showCrewPopup && <CrewPopup crew={gameCrew} onClose={() => setShowCrewPopup(false)} />}
+      {showCrewPopup && (
+        <CrewPopup
+          crew={gameCrew}
+          skillModalMember={crewSkillModalMember}
+          onSkillModalClose={() => setCrewSkillModalMember(null)}
+          onClose={() => {
+            setCrewSkillModalMember(null);
+            setShowCrewPopup(false);
+          }}
+          onManualLevelUp={handleCrewManualLevelUp}
+          onLevelChoice={(memberId, optIndex) => {
+            setGameCrew((prev) => {
+              const next = confirmLevelSkillChoice(prev, memberId, optIndex);
+              const mem = next.find((m) => String(m.id) === String(memberId));
+              queueMicrotask(() => {
+                if (mem?.pendingLevelChoice && (mem.pendingLevelChoice.opt1 || mem.pendingLevelChoice.opt2)) {
+                  setCrewSkillModalMember(mem);
+                } else {
+                  setCrewSkillModalMember(null);
+                }
+              });
+              return next;
+            });
+          }}
+        />
+      )}
     </div>
     </>
   );

@@ -4,10 +4,11 @@ import { MapView } from './MapView';
 /**
  * Модальное окно карты в стиле FTL.
  * @param {object} mapState - состояние карты (nodes, edges, currentNodeId, visitedIds)
+ * @param {number} survey - дальность разведки (0 = типы соседних нод скрыты; N = видны типы в пределах N прыжков)
  * @param {function} onNodeClick - (nodeId) => void — при клике на доступный узел
  * @param {function} onClose - закрытие по клику на фон
  */
-export function MapPopup({ mapState, onNodeClick, onClose }) {
+export function MapPopup({ mapState, survey = 0, onNodeClick, onClose }) {
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm cursor-pointer"
@@ -23,7 +24,7 @@ export function MapPopup({ mapState, onNodeClick, onClose }) {
         <div className="text-amber-500/90 text-sm font-semibold mb-4 border-b border-zinc-600 pb-2">
           [ КАРТА ПЛАНАРНОГО ПУТИ ]
         </div>
-        <MapView mapState={mapState} onNodeClick={onNodeClick} />
+        <MapView mapState={mapState} survey={survey} onNodeClick={onNodeClick} />
         <div className="mt-4 pt-3 border-t border-zinc-600 flex flex-wrap gap-6 text-xs text-zinc-400">
           <span className="flex items-center gap-2">
             <span

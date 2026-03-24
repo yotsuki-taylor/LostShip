@@ -138,20 +138,56 @@ function parseNum(val) {
   return null;
 }
 
+function mergeCrewMemberXp(base, extra) {
+  const b = base && typeof base === 'object' && Object.keys(base).length ? { ...base } : null;
+  const e = extra && typeof extra === 'object' && Object.keys(extra).length ? { ...extra } : null;
+  if (!b && !e) return null;
+  if (!b) return e;
+  if (!e) return b;
+  const out = { ...b };
+  Object.entries(e).forEach(([k, v]) => {
+    const n = parseNum(v);
+    if (n === null) return;
+    out[k] = (out[k] ?? 0) + n;
+  });
+  return out;
+}
+
+function parseCrewMemberXpKey(kLower) {
+  const m = /^(.+)_xp$/.exec(kLower);
+  if (!m || !m[1]) return null;
+  const slug = m[1].trim().toLowerCase();
+  return slug || null;
+}
+
 function splitConsequences(obj) {
-  if (!obj || typeof obj !== 'object') return { delta: {}, setVariable: null, enemyDamage: undefined };
+  if (!obj || typeof obj !== 'object') {
+    return { delta: {}, setVariable: null, enemyDamage: undefined, crewMemberXp: null };
+  }
   const delta = {};
+  const crewMemberXp = {};
   const setVariable = {};
   let enemyDamage;
   Object.entries(obj).forEach(([k, v]) => {
     const kLower = String(k).toLowerCase().trim();
     const numVal = parseNum(v);
+    const xpSlug = parseCrewMemberXpKey(kLower);
+    if (xpSlug !== null && numVal !== null) {
+      crewMemberXp[xpSlug] = (crewMemberXp[xpSlug] ?? 0) + numVal;
+      return;
+    }
     if (RESOURCE_KEYS.includes(kLower) && numVal !== null) delta[kLower] = numVal;
     else if (PLAYER_VAR_KEYS.includes(kLower)) setVariable[kLower] = typeof v === 'string' ? v : String(v);
     else if (kLower === 'enemy_hp' && numVal !== null && numVal < 0) enemyDamage = Math.abs(numVal);
     else if (kLower === 'enemy_damage' && numVal !== null && numVal > 0) enemyDamage = numVal;
   });
-  return { delta, setVariable: Object.keys(setVariable).length ? setVariable : null, enemyDamage };
+  const cmx = Object.keys(crewMemberXp).length ? crewMemberXp : null;
+  return {
+    delta,
+    setVariable: Object.keys(setVariable).length ? setVariable : null,
+    enemyDamage,
+    crewMemberXp: cmx,
+  };
 }
 
 function rowToEvent(row) {
@@ -179,15 +215,18 @@ function rowToEvent(row) {
         failureSetVariable: mergeSetVar(fail.setVariable),
         successEnemyDamage: succ.enemyDamage ?? topLevel.enemyDamage,
         failureEnemyDamage: fail.enemyDamage ?? topLevel.enemyDamage,
+        successCrewMemberXp: mergeCrewMemberXp(topLevel.crewMemberXp, succ.crewMemberXp),
+        failureCrewMemberXp: mergeCrewMemberXp(topLevel.crewMemberXp, fail.crewMemberXp),
       };
     } else if (consequences) {
-      const { delta, setVariable, enemyDamage } = splitConsequences(consequences);
+      const { delta, setVariable, enemyDamage, crewMemberXp } = splitConsequences(consequences);
       choice = {
         text,
         optReq,
         delta: { hull: 0, energy: 0, scrap: 0, crew: 0, stability: 0, ...delta },
         setVariable,
         enemyDamage,
+        ...(crewMemberXp ? { crewMemberXp } : {}),
       };
     } else {
       choice = { text, optReq, delta: {} };
@@ -363,8 +402,15 @@ function rowToIntroSlide(row) {
     const text = textsByPosition[i - 1] || getOptText(row, i) || getRowValue(row, `opt${i}_text`) || fallbackTexts[i - 1];
     if (!text) break;
     const consequences = getOptConsequences(row, i);
-    const { delta, setVariable } = consequences ? splitConsequences(consequences) : { delta: {}, setVariable: null };
-    choices.push({ text, setVariable, delta: Object.keys(delta).length ? delta : null });
+    const { delta, setVariable, crewMemberXp } = consequences
+      ? splitConsequences(consequences)
+      : { delta: {}, setVariable: null, crewMemberXp: null };
+    choices.push({
+      text,
+      setVariable,
+      delta: Object.keys(delta).length ? delta : null,
+      ...(crewMemberXp ? { crewMemberXp } : {}),
+    });
   }
   return {
     id: getRowValue(row, 'id') || row.id,
@@ -464,6 +510,8 @@ export const DEFAULT_SHIP_STATS = {
   attack: 2,
   supplies: 20,
   morale: 2,
+  /** Дальность «разведки» карты: 0 — типы соседних нод скрыты; N — видны типы в пределах N прыжков по графу */
+  survey: 0,
 };
 
 function findCol(headers, names) {
@@ -493,6 +541,7 @@ export async function fetchShipStats(shipType = null) {
 
     const stats = { ...DEFAULT_SHIP_STATS };
     const keyAliases = { health: 'hull', прочность: 'hull', энергия: 'energy', припасы: 'supplies', мораль: 'morale' };
+    const EXTRA_SHIP_KEYS = ['survey'];
 
     for (const row of rows) {
       const keyRaw = (row._values?.[statsCol] ?? row[headers[statsCol]] ?? '').toString().trim().toLowerCase();
@@ -500,7 +549,9 @@ export async function fetchShipStats(shipType = null) {
       if (!keyRaw) continue;
 
       const keyClean = keyRaw.replace(/\s*\(.*\)$/, '').trim();
-      const key = keyAliases[keyClean] ?? (SHIP_STATS_HEADERS.includes(keyClean) ? keyClean : null);
+      const key =
+        keyAliases[keyClean] ??
+        (SHIP_STATS_HEADERS.includes(keyClean) ? keyClean : EXTRA_SHIP_KEYS.includes(keyClean) ? keyClean : null);
       if (!key) continue;
 
       const num = parseInt(valRaw, 10);
@@ -535,10 +586,15 @@ export function pickCrewNames(rawCrew) {
   return rawCrew.map((c) => ({
     ...c,
     name: pickRandomName(c.nameList ?? c.name ?? ''),
+    xp: 0,
+    level: 1,
+    skills: [],
+    pendingLevelQueue: [],
+    pendingLevelChoice: null,
   }));
 }
 
-function normalizePassiveEffect(effect) {
+export function normalizePassiveEffect(effect) {
   if (!effect || typeof effect !== 'object') return null;
   const normalized = {};
   Object.entries(effect).forEach(([k, v]) => {
@@ -547,6 +603,38 @@ function normalizePassiveEffect(effect) {
     if (key && num !== null) normalized[key] = num;
   });
   return Object.keys(normalized).length ? normalized : null;
+}
+
+/** Столбцы passive_lvlN, lvlN_opt1, lvlN_opt2 из строки команды. */
+function extractCrewLevelData(headers, row) {
+  const levelPassives = {};
+  const levelOptions = {};
+  const values = row._values || [];
+  headers.forEach((h, i) => {
+    const hl = String(h || '')
+      .toLowerCase()
+      .replace(/\s+/g, '_');
+    let m = hl.match(/^passive[_]?lvl[_]?(\d+)$/i) || hl.match(/passive[_]?lvl[_]?(\d+)/);
+    if (m) {
+      const lv = parseInt(m[1], 10);
+      const raw = (values[i] ?? row[h] ?? '').toString().trim();
+      const eff = normalizePassiveEffect(parseConsequences(raw));
+      if (eff) levelPassives[lv] = eff;
+    }
+    m = hl.match(/^lvl[_]?(\d+)[_]?opt[_]?1$/i) || hl.match(/lvl[_]?(\d+)[_]?opt1/);
+    if (m) {
+      const lv = parseInt(m[1], 10);
+      if (!levelOptions[lv]) levelOptions[lv] = { opt1: '', opt2: '' };
+      levelOptions[lv].opt1 = (values[i] ?? row[h] ?? '').toString().trim();
+    }
+    m = hl.match(/^lvl[_]?(\d+)[_]?opt[_]?2$/i) || hl.match(/lvl[_]?(\d+)[_]?opt2/);
+    if (m) {
+      const lv = parseInt(m[1], 10);
+      if (!levelOptions[lv]) levelOptions[lv] = { opt1: '', opt2: '' };
+      levelOptions[lv].opt2 = (values[i] ?? row[h] ?? '').toString().trim();
+    }
+  });
+  return { levelPassives, levelOptions };
 }
 
 function getStatusFromHp(hp) {
@@ -578,6 +666,7 @@ export async function fetchCrew() {
       const hp = hpCol >= 0 ? (row._values?.[hpCol] ?? row[headers[hpCol]] ?? '20').toString().trim() : '20';
       const passiveRaw = passiveCol >= 0 ? (row._values?.[passiveCol] ?? row[headers[passiveCol]] ?? '').toString().trim() : '';
       const passiveEffect = normalizePassiveEffect(parseConsequences(passiveRaw));
+      const { levelPassives, levelOptions } = extractCrewLevelData(headers, row);
 
       crew.push({
         id: id || crew.length,
@@ -586,6 +675,8 @@ export async function fetchCrew() {
         hp: parseInt(hp, 10) || 20,
         status: getStatusFromHp(hp),
         passiveEffect,
+        levelPassives,
+        levelOptions,
       });
     }
     return crew;

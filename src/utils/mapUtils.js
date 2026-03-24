@@ -165,6 +165,55 @@ export function getReachableNodeIds(currentNodeId, edges) {
 }
 
 /**
+ * Узлы, до которых от startId кратчайший путь по рёбрам не длиннее maxDist (включая графовые расстояния 1..maxDist).
+ * startId не входит в результат.
+ */
+export function getNodeIdsWithinDistance(startId, edges, maxDist) {
+  if (maxDist <= 0 || startId == null) return new Set();
+  const adj = new Map();
+  edges.forEach(([a, b]) => {
+    if (!adj.has(a)) adj.set(a, []);
+    if (!adj.has(b)) adj.set(b, []);
+    adj.get(a).push(b);
+    adj.get(b).push(a);
+  });
+  const result = new Set();
+  const queue = [startId];
+  const dist = new Map([[startId, 0]]);
+  while (queue.length) {
+    const id = queue.shift();
+    const d = dist.get(id);
+    for (const nb of adj.get(id) ?? []) {
+      if (!dist.has(nb)) {
+        const nd = d + 1;
+        dist.set(nb, nd);
+        queue.push(nb);
+        if (nd >= 1 && nd <= maxDist) result.add(nb);
+      }
+    }
+  }
+  return result;
+}
+
+/**
+ * Для survey > 0: заранее выставляет типы нод в пределах видимости (чтобы иконка не менялась при посещении).
+ */
+export function ensureSurveyRevealTypes(mapState, survey, rollFn = rollNodeType) {
+  if (!mapState || survey <= 0) return mapState;
+  const edgesBidi = ensureBidirectionalEdges(mapState.nodes, mapState.edges ?? []);
+  const ids = getNodeIdsWithinDistance(mapState.currentNodeId, edgesBidi, survey);
+  const nodeTypes = { ...(mapState.nodeTypes ?? {}) };
+  let changed = false;
+  ids.forEach((id) => {
+    if (nodeTypes[id] != null) return;
+    nodeTypes[id] = rollFn();
+    changed = true;
+  });
+  if (!changed) return mapState;
+  return { ...mapState, nodeTypes };
+}
+
+/**
  * Создаёт начальное состояние карты для новой игры.
  * Один узел (кроме старта и выхода) назначается рынком.
  */

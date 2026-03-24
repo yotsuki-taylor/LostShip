@@ -1,5 +1,12 @@
 import React from 'react';
-import { NODE_STATUS, NODE_TYPE, getNodeStatus, getReachableNodeIds, ensureBidirectionalEdges } from '../utils/mapUtils';
+import {
+  NODE_STATUS,
+  NODE_TYPE,
+  getNodeStatus,
+  getReachableNodeIds,
+  ensureBidirectionalEdges,
+  getNodeIdsWithinDistance,
+} from '../utils/mapUtils';
 
 const NODE_RADIUS = 24;
 const ICON_SIZE = 40;
@@ -15,15 +22,19 @@ const PADDING = 80;
 /**
  * Отрисовка карты: узлы и связи.
  * @param {object} mapState - { nodes, edges, currentNodeId, visitedIds }
+ * @param {number} survey - 0: не показывать типы непосещённых нод; N: показать типы в пределах N прыжков по графу
  * @param {function} onNodeClick - (nodeId) => void
  */
-export function MapView({ mapState, onNodeClick }) {
+export function MapView({ mapState, survey = 0, onNodeClick }) {
   if (!mapState?.nodes?.length) return null;
 
   const { nodes, edges, currentNodeId, visitedIds, nodeTypes = {} } = mapState;
   const visitedSet = visitedIds instanceof Set ? visitedIds : new Set(visitedIds ?? []);
   const edgesBidi = ensureBidirectionalEdges(nodes, edges ?? []);
   const reachableIds = getReachableNodeIds(currentNodeId, edgesBidi);
+  const surveyN = Math.max(0, Math.floor(Number(survey) || 0));
+  const surveyNodeIds =
+    surveyN > 0 ? getNodeIdsWithinDistance(currentNodeId, edgesBidi, surveyN) : new Set();
 
   const width = 800;
   const height = 560;
@@ -95,7 +106,8 @@ export function MapView({ mapState, onNodeClick }) {
         const nodeType = nodeTypes[node.id];
         const iconName = nodeType && NODE_TYPE_ICONS[nodeType];
         const iconSrc = iconName ? `${import.meta.env.BASE_URL}images/${iconName}.png` : null;
-        const showIcon = isExplored && iconSrc;
+        const showSurveyPreview = surveyN > 0 && !isExplored && surveyNodeIds.has(node.id) && iconSrc;
+        const showIcon = (isExplored && iconSrc) || showSurveyPreview;
 
         return (
           <g key={node.id}>
@@ -124,6 +136,7 @@ export function MapView({ mapState, onNodeClick }) {
                 height={ICON_SIZE}
                 preserveAspectRatio="xMidYMid meet"
                 pointerEvents="none"
+                opacity={showSurveyPreview ? 0.75 : 1}
               />
             )}
           </g>
