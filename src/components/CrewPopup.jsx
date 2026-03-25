@@ -1,7 +1,60 @@
 import React, { useState, useEffect } from 'react';
 import { XP_PER_LEVEL, isCrewMemberAlive } from '../utils/crewXp';
+import { getResourceLabels } from '../utils/resourceHelpers';
 
 const MAX_HP = 20;
+
+/** Склонение «N припас(ов/а)» для фразы про пассив */
+function suppliesDeclensionRu(n) {
+  const abs = Math.abs(Math.floor(Number(n) || 0));
+  const mod100 = abs % 100;
+  if (mod100 >= 11 && mod100 <= 14) return 'припасов';
+  const mod10 = abs % 10;
+  if (mod10 === 1) return 'припас';
+  if (mod10 >= 2 && mod10 <= 4) return 'припаса';
+  return 'припасов';
+}
+
+const PASSIVE_KEY_ORDER = ['hp', 'hull', 'energy', 'supplies', 'morale', 'speed', 'attack', 'survey'];
+
+/** Строки «Пассивно восстанавливает N … в ход» по объекту passiveEffect (только положительные значения). */
+function passiveRestoreLines(passiveEffect) {
+  if (!passiveEffect || typeof passiveEffect !== 'object') return [];
+  const labels = getResourceLabels();
+  const keys = Object.keys(passiveEffect).filter((k) => {
+    const v = passiveEffect[k];
+    return typeof v === 'number' && v > 0;
+  });
+  keys.sort((a, b) => {
+    const ia = PASSIVE_KEY_ORDER.indexOf(String(a).toLowerCase());
+    const ib = PASSIVE_KEY_ORDER.indexOf(String(b).toLowerCase());
+    if (ia === -1 && ib === -1) return String(a).localeCompare(String(b));
+    if (ia === -1) return 1;
+    if (ib === -1) return -1;
+    return ia - ib;
+  });
+  return keys.map((k) => formatPassiveRestoreLine(k, passiveEffect[k], labels)).filter(Boolean);
+}
+
+function formatPassiveRestoreLine(key, value, labels) {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const k = String(key || '').toLowerCase();
+  if (k === 'hp') return `Пассивно восстанавливает ${n} HP экипажу в ход`;
+  if (k === 'supplies') return `Пассивно восстанавливает ${n} ${suppliesDeclensionRu(n)} в ход`;
+  const genitive = {
+    hull: 'прочности',
+    energy: 'энергии',
+    morale: 'морали',
+    speed: 'скорости',
+    attack: 'атаки',
+    survey: 'разведки',
+  };
+  if (genitive[k]) return `Пассивно восстанавливает ${n} ${genitive[k]} в ход`;
+  const lab = labels[k];
+  if (lab) return `Пассивно восстанавливает ${n} (${lab.toLowerCase()}) в ход`;
+  return `Пассивно восстанавливает ${n} (${k}) в ход`;
+}
 
 export function CrewPopup({
   crew,
@@ -13,6 +66,8 @@ export function CrewPopup({
 }) {
   const displayCrew = [...crew].slice(0, 6);
   const [modalMember, setModalMember] = useState(null);
+  /** id → показана карточка навыков вместо аватарки */
+  const [skillsCardOpenById, setSkillsCardOpenById] = useState({});
 
   useEffect(() => {
     if (skillModalMember) {
@@ -109,22 +164,80 @@ export function CrewPopup({
               }
             };
 
+            const memberKey = String(c.id ?? '');
+            const showSkillsCard = !!skillsCardOpenById[memberKey];
+            const skillsList = Array.isArray(c.skills) ? c.skills : [];
+            const passiveLines = passiveRestoreLines(c.passiveEffect);
+
+            const toggleAvatarSkillsCard = (e) => {
+              e.stopPropagation();
+              setSkillsCardOpenById((prev) => ({
+                ...prev,
+                [memberKey]: !prev[memberKey],
+              }));
+            };
+
             return (
               <div key={c.id} className="flex flex-col items-center p-3 rounded border border-zinc-600 bg-zinc-800/50 relative">
                 <div className="relative w-full rounded overflow-hidden bg-zinc-700 flex-shrink-0 mb-2 aspect-[7/5]">
-                  <img
-                    src={avatarSrc}
-                    alt=""
-                    className="block w-full h-full object-contain"
-                    onError={(e) => {
-                      e.target.style.display = 'none';
-                      const fb = e.target.parentElement?.querySelector('.avatar-fallback');
-                      if (fb) fb.classList.remove('hidden');
-                    }}
-                  />
-                  <div className="avatar-fallback absolute inset-0 hidden flex items-center justify-center text-zinc-500 text-2xl bg-zinc-700">
-                    ?
-                  </div>
+                  <button
+                    type="button"
+                    onClick={toggleAvatarSkillsCard}
+                    className="group absolute inset-0 w-full h-full p-0 border-0 bg-transparent cursor-pointer text-left rounded overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/70 focus-visible:ring-inset"
+                    aria-label={showSkillsCard ? 'Показать аватар' : 'Показать навыки'}
+                  >
+                    {!showSkillsCard ? (
+                      <>
+                        <img
+                          src={avatarSrc}
+                          alt=""
+                          className="pointer-events-none block w-full h-full object-contain"
+                          onError={(e) => {
+                            e.target.style.display = 'none';
+                            const fb = e.target.parentElement?.querySelector('.avatar-fallback');
+                            if (fb) fb.classList.remove('hidden');
+                          }}
+                        />
+                        <div className="avatar-fallback pointer-events-none absolute inset-0 hidden flex items-center justify-center text-zinc-500 text-2xl bg-zinc-700">
+                          ?
+                        </div>
+                      </>
+                    ) : (
+                      <div className="absolute inset-0 flex flex-col bg-zinc-900/95 border border-amber-600/35 rounded overflow-hidden shadow-inner">
+                        <div className="shrink-0 px-2 pt-1.5 pb-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-500/90 border-b border-zinc-700/80">
+                          Навыки
+                        </div>
+                        <ul className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-1.5 space-y-1.5 text-[10px] leading-snug text-zinc-300">
+                          {passiveLines.length === 0 && skillsList.length === 0 ? (
+                            <li className="text-zinc-500 italic">Нет выбранных навыков</li>
+                          ) : (
+                            <>
+                              {passiveLines.map((line, pi) => (
+                                <li
+                                  key={`${memberKey}-passive-${pi}`}
+                                  className={`pb-1.5 text-emerald-400/95 ${
+                                    pi === passiveLines.length - 1 && skillsList.length === 0
+                                      ? ''
+                                      : 'border-b border-zinc-700/40'
+                                  }`}
+                                >
+                                  {line}
+                                </li>
+                              ))}
+                              {skillsList.map((s, si) => (
+                                <li
+                                  key={`${memberKey}-skill-${si}`}
+                                  className="border-b border-zinc-700/40 pb-1.5 last:border-b-0 last:pb-0"
+                                >
+                                  {s.text || s.raw || '—'}
+                                </li>
+                              ))}
+                            </>
+                          )}
+                        </ul>
+                      </div>
+                    )}
+                  </button>
                 </div>
                 <div className="w-full h-1.5 bg-zinc-700 rounded-full overflow-hidden mb-1">
                   <div
