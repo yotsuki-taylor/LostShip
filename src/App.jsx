@@ -180,6 +180,15 @@ function distributeHullDamageToCrew(crew, hullDamageAmount) {
   return nextCrew;
 }
 
+/** После победы в бою: один раз переносит накопленный за бой урон корпуса в HP команды (50%); сбрасывает счётчик. */
+function applyAccumulatedCombatHullDamageToCrew(crew, accumRef) {
+  const n = accumRef.current;
+  accumRef.current = 0;
+  if (n <= 0) return crew;
+  const crewHullPoints = Math.max(0, Math.floor(n / 2));
+  return distributeHullDamageToCrew(crew, crewHullPoints);
+}
+
 function applyPassiveCrewEffects(rawCrew, currentResources, limits) {
   const crew = rawCrew || [];
   let squadHeal = 0;
@@ -302,6 +311,8 @@ export default function App() {
     return () => clearTimeout(t);
   }, [ramTrigger]);
   const pendingJumpRef = useRef(null);
+  /** Суммарный урон корпуса за бой; при победе половина (floor) переносится в HP команды */
+  const combatCrewHullDamageAccumRef = useRef(0);
 
   const getEventKey = useCallback((e) => `${(e?.event || '').toLowerCase()}-${e?.id ?? e?.title ?? ''}`, []);
 
@@ -528,6 +539,7 @@ export default function App() {
         const initialEnemyHp = Math.max(0, fightData.hp ?? 0);
         const startEvent = fightData.eventStart ? findEventByIdOrTitle(fightData.eventStart) : null;
         setEnemyHitTrigger(0);
+        combatCrewHullDamageAccumRef.current = 0;
         setCurrentFight(fightData);
         setCombatTurn(startEvent ? 0 : 1);
         setEnemyHp(initialEnemyHp);
@@ -669,6 +681,7 @@ export default function App() {
         const initialEnemyHp = Math.max(0, fightData.hp ?? 0);
         const startEvent = fightData.eventStart ? findEventByIdOrTitle(fightData.eventStart) : null;
         setEnemyHitTrigger(0);
+        combatCrewHullDamageAccumRef.current = 0;
         setCurrentFight(fightData);
         setCombatTurn(startEvent ? 0 : 1);
         setEnemyHp(initialEnemyHp);
@@ -856,6 +869,7 @@ export default function App() {
           setCurrentEvent(null);
           setIsEventActive(false);
           setIsProcessing(false);
+          combatCrewHullDamageAccumRef.current = 0;
           setCurrentFight(fightData);
           const startEvent = fightData.eventStart ? findEventByIdOrTitle(fightData.eventStart) : null;
           setCombatTurn(startEvent ? 0 : 1);
@@ -948,9 +962,12 @@ export default function App() {
   );
 
   const finishCombat = useCallback((win) => {
+    if (!win) {
+      combatCrewHullDamageAccumRef.current = 0;
+    }
     setPlayerVars((prev) => ({ ...prev, fight: win ? 'win' : 'lose' }));
     setCurrentFight(null);
-    setEnemyHp(0);
+   setEnemyHp(0);
     setEnemyHitTrigger(0);
     setPendingFightEnd(null);
     setPendingCombatAction(null);
@@ -968,14 +985,14 @@ export default function App() {
       if (playerDamageDealt > 0) setEnemyHitTrigger((t) => t + 1);
       const newEnemyHp = Math.max(0, enemyHp - playerDamageDealt);
       const hullDamage = Math.min(playerDamageTaken, resources.hull ?? 0);
+      combatCrewHullDamageAccumRef.current += hullDamage;
       let newHull = Math.max(0, (resources.hull ?? 0) - playerDamageTaken);
-      let nextCrew = hullDamage > 0 ? distributeHullDamageToCrew(gameCrew, hullDamage) : gameCrew;
+      const nextCrew = gameCrew;
       let afterCombatResources = { ...resources, hull: newHull };
       if (actionName === 'Атака') afterCombatResources = applyDeltas(afterCombatResources, { energy: -3 }, limits);
       const finalHull = afterCombatResources.hull ?? 0;
       setEnemyHp(newEnemyHp);
       setResources(afterCombatResources);
-      if (hullDamage > 0) setGameCrew(nextCrew);
       const logEntry = customLogMessage ?? `Ход ${combatTurn}: ${actionName}. Вы нанесли ${playerDamageDealt} урона, получили ${playerDamageTaken} урона.`;
       let newEventLog = [...eventLog.slice(-5), logEntry].slice(-5);
       setEventLog(newEventLog);
@@ -986,13 +1003,14 @@ export default function App() {
         const won = newEnemyHp <= 0 && finalHull > 0;
         let crewAfterCombat = nextCrew;
         if (won) {
-          const r = applyTeamXpReward(nextCrew, crew);
+          const crewAfterHull = applyAccumulatedCombatHullDamageToCrew(nextCrew, combatCrewHullDamageAccumRef);
+          const r = applyTeamXpReward(crewAfterHull, crew);
           crewAfterCombat = r.crew;
           setGameCrew(r.crew);
           newEventLog = [...eventLog.slice(-5), logEntry, 'Враг повержен! Победа!', ...r.logLines].slice(-5);
           setEventLog(newEventLog);
-        } else if (hullDamage > 0) {
-          setGameCrew(nextCrew);
+        } else {
+          combatCrewHullDamageAccumRef.current = 0;
         }
         setPendingFightEnd({ win: won, endEvent });
         const endPlayerVars = { ...playerVars, fight: won ? 'win' : 'lose' };
@@ -1083,6 +1101,7 @@ export default function App() {
           `Ход ${combatTurn}: Сбежать. Вы сбежали с поля боя.${deltaStr}`,
           ...xpResult.logLines,
         ].slice(-5);
+        combatCrewHullDamageAccumRef.current = 0;
         setResources(afterFlee);
         setGameCrew(xpResult.crew);
         setCurrentFight(null);
@@ -1159,7 +1178,8 @@ export default function App() {
       const riskSuffix = riskOutcome ? ` (${riskOutcome === 'success' ? 'успех' : 'провал'})` : '';
       const deltaStr = formatDeltaForLog(delta, choiceEnemyDamage > 0 ? { enemy_damage: choiceEnemyDamage } : {});
       const choiceHullDamage = (delta.hull ?? 0) < 0 ? Math.abs(Math.round(delta.hull)) : 0;
-      let nextCrew = choiceHullDamage > 0 ? distributeHullDamageToCrew(gameCrew, choiceHullDamage) : gameCrew;
+      combatCrewHullDamageAccumRef.current += choiceHullDamage;
+      const nextCrew = gameCrew;
       let afterResources = applyDeltas(resources, delta, limits);
       const mergedCombatPlayerVars = Object.keys(setVariable).length > 0 ? { ...playerVars, ...setVariable } : playerVars;
       if (Object.keys(setVariable).length > 0) setPlayerVars(mergedCombatPlayerVars);
@@ -1181,8 +1201,8 @@ export default function App() {
         if (playerDamageDealt > 0 || choiceEnemyDamage > 0) setEnemyHitTrigger((t) => t + 1);
 
         const combatHullDamage = Math.min(playerDamageTaken, afterResources.hull ?? 0);
+        combatCrewHullDamageAccumRef.current += combatHullDamage;
         const newHull = Math.max(0, (afterResources.hull ?? 0) - playerDamageTaken);
-        nextCrew = combatHullDamage > 0 ? distributeHullDamageToCrew(nextCrew, combatHullDamage) : nextCrew;
         const totalEnemyDamage = playerDamageDealt + choiceEnemyDamage;
         const newEnemyHp = Math.max(0, (enemyHp ?? 0) - totalEnemyDamage);
 
@@ -1193,12 +1213,26 @@ export default function App() {
           const criticalEvent = pickCriticalEvent(events, pendingCriticalRes, finalResources, mergedCombatPlayerVars);
           if (criticalEvent) {
             setResources(finalResources);
-            setGameCrew(nextCrew);
+            const endedWithResult = newEnemyHp <= 0 || newHull <= 0;
+            const wonCritical = newEnemyHp <= 0 && newHull > 0;
+            let crewForCritical = nextCrew;
+            const extraLog = [];
+            if (endedWithResult) {
+              if (wonCritical) {
+                const crewAfterHull = applyAccumulatedCombatHullDamageToCrew(gameCrew, combatCrewHullDamageAccumRef);
+                const r = applyTeamXpReward(crewAfterHull, crew);
+                crewForCritical = r.crew;
+                extraLog.push('Враг повержен! Победа!', ...r.logLines);
+              } else {
+                combatCrewHullDamageAccumRef.current = 0;
+              }
+            }
+            setGameCrew(crewForCritical);
             setEnemyHp(newEnemyHp);
             setCurrentEvent(criticalEvent);
             setCurrentCriticalResource(pendingCriticalRes);
             const pendingLogEntry = customLogMessage ?? `Ход ${combatTurn}: ${actionName}. Вы нанесли ${playerDamageDealt} урона, получили ${playerDamageTaken} урона.`;
-            setEventLog((prev) => [...prev.slice(-5), pendingLogEntry].slice(-5));
+            setEventLog((prev) => [...prev.slice(-5), pendingLogEntry, ...extraLog].slice(-5));
             if (newEnemyHp <= 0 || newHull <= 0) {
               const won = newEnemyHp <= 0 && newHull > 0;
               setPendingFightEnd({ win, endEvent: won ? findEventByIdOrTitle(currentFight?.endFightEvent) : null });
@@ -1211,7 +1245,7 @@ export default function App() {
               eventLog: [...combatLogEntries, pendingLogEntry].slice(-5),
               stormProgress: 0,
               playerVars: { ...mergedCombatPlayerVars, fight: (newEnemyHp <= 0 && newHull > 0) ? 'win' : (newHull <= 0 ? 'lose' : undefined) },
-              crew: nextCrew,
+              crew: crewForCritical,
               mapState: mapState ? serializeMapState(mapState) : null,
               nextDestByDestination,
               shownEventIds,
@@ -1234,11 +1268,13 @@ export default function App() {
           const won = newEnemyHp <= 0 && newHull > 0;
           let crewAfter = nextCrew;
           if (won) {
-            const r = applyTeamXpReward(nextCrew, crew);
+            const crewAfterHull = applyAccumulatedCombatHullDamageToCrew(gameCrew, combatCrewHullDamageAccumRef);
+            const r = applyTeamXpReward(crewAfterHull, crew);
             crewAfter = r.crew;
             setGameCrew(r.crew);
             setEventLog((prev) => [...prev.slice(-5), mainLogEntry, 'Враг повержен! Победа!', ...r.logLines].slice(-5));
           } else {
+            combatCrewHullDamageAccumRef.current = 0;
             setEventLog((prev) => [...prev.slice(-5), mainLogEntry].slice(-5));
           }
           setPendingFightEnd({ win: won, endEvent });
@@ -1287,7 +1323,6 @@ export default function App() {
           const criticalEvent = pickCriticalEvent(events, combatCriticalRes, afterResources, mergedCombatPlayerVars);
           if (criticalEvent) {
             setResources(afterResources);
-            if (choiceHullDamage > 0) setGameCrew(nextCrew);
             setCurrentEvent(criticalEvent);
             setCurrentCriticalResource(combatCriticalRes);
             setEventLog(combatLogEntries.slice(-5));
@@ -1311,7 +1346,6 @@ export default function App() {
         if (choiceHullDamage > 0) setPlayerHitTrigger((t) => t + 1);
         if (choiceEnemyDamage > 0) setEnemyHitTrigger((t) => t + 1);
         setResources(afterResources);
-        if (choiceHullDamage > 0) setGameCrew(nextCrew);
         const newEnemyHp = Math.max(0, (enemyHp ?? 0) - choiceEnemyDamage);
         setEnemyHp(newEnemyHp);
         if (combatTurn === 0) {
@@ -1337,7 +1371,8 @@ export default function App() {
         } else if (newEnemyHp <= 0) {
           const endEventRef = currentFight?.endFightEvent;
           const endEvent = findEventByIdOrTitle(endEventRef);
-          const r = applyTeamXpReward(nextCrew, crew);
+          const crewAfterWin = applyAccumulatedCombatHullDamageToCrew(gameCrew, combatCrewHullDamageAccumRef);
+          const r = applyTeamXpReward(crewAfterWin, crew);
           setGameCrew(r.crew);
           setEventLog((prev) => [...prev.slice(-5), 'Враг повержен! Победа!', ...r.logLines].slice(-5));
           setPendingFightEnd({ win: true, endEvent });
@@ -1419,6 +1454,7 @@ export default function App() {
       saved.nextDestByDestination ?? (saved.nextDestinationEventId != null ? { lighthouse: saved.nextDestinationEventId, demon: saved.nextDestinationEventId } : { lighthouse: 1, demon: 1 })
     );
     setShownEventIds(saved.shownEventIds ?? []);
+    combatCrewHullDamageAccumRef.current = 0;
     setCurrentFight(saved.currentFight ?? null);
     setCombatTurn(saved.combatTurn ?? 0);
     setEnemyHp(saved.enemyHp ?? 0);
@@ -1685,6 +1721,15 @@ export default function App() {
             setGameCrew((prev) => {
               const next = confirmLevelSkillChoice(prev, memberId, optIndex);
               const mem = next.find((m) => String(m.id) === String(memberId));
+              const lastSkill = mem?.skills?.[mem.skills.length - 1];
+              if (lastSkill?.effect?.type === 'survey' && typeof lastSkill.effect.survey === 'number') {
+                queueMicrotask(() => {
+                  setResources((r) => ({
+                    ...r,
+                    survey: (r.survey ?? 0) + lastSkill.effect.survey,
+                  }));
+                });
+              }
               queueMicrotask(() => {
                 if (mem?.pendingLevelChoice && (mem.pendingLevelChoice.opt1 || mem.pendingLevelChoice.opt2)) {
                   setCrewSkillModalMember(mem);

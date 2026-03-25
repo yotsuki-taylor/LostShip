@@ -447,13 +447,19 @@ export function matchesEventReq(eventReq, playerVars, resources = {}) {
   });
 }
 
-/** Выбирает critical-ивент для ресурса (supplies, energy, morale). event_req должен совпадать: supplies=0, energy=0, morale=0 */
+/**
+ * Выбирает critical-ивент. У каждой строки в таблице/JSON должен быть свой event_req (supplies=0, energy=0, morale=0).
+ * Раньше проверялось только «текущий ресурс на нуле», из-за чего в пул попадали все critical — в т.ч. с чужим условием.
+ * Если event_req пустой — считаем условие `${resourceType}=0` (какой ресурс триггерит выбор, см. getCriticalResource).
+ */
 export function pickCriticalEvent(events, resourceType, resources, playerVars) {
   if (!events?.length || !resourceType) return null;
-  const req = `${resourceType}=0`;
-  const pool = events.filter(
-    (e) => (e?.event || '').toLowerCase() === 'critical' && matchesEventReq(req, playerVars, resources)
-  );
+  const pool = events.filter((e) => {
+    if ((e?.event || '').toLowerCase() !== 'critical') return false;
+    const rawReq = (e.event_req ?? e.eventReq ?? '').toString().trim();
+    const reqStr = rawReq || `${resourceType}=0`;
+    return matchesEventReq(reqStr, playerVars, resources);
+  });
   return pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : null;
 }
 
@@ -621,17 +627,30 @@ function extractCrewLevelData(headers, row) {
       const eff = normalizePassiveEffect(parseConsequences(raw));
       if (eff) levelPassives[lv] = eff;
     }
-    m = hl.match(/^lvl[_]?(\d+)[_]?opt[_]?1$/i) || hl.match(/lvl[_]?(\d+)[_]?opt1/);
+    // Только точные имена lvlN_opt1 / lvlN_opt2 (не lvlN_opt1_text — иначе JSON перезаписывался подписью)
+    m = hl.match(/^lvl[_]?(\d+)[_]?opt[_]?1$/i);
     if (m) {
       const lv = parseInt(m[1], 10);
-      if (!levelOptions[lv]) levelOptions[lv] = { opt1: '', opt2: '' };
+      if (!levelOptions[lv]) levelOptions[lv] = { opt1: '', opt2: '', opt1Label: '', opt2Label: '' };
       levelOptions[lv].opt1 = (values[i] ?? row[h] ?? '').toString().trim();
     }
-    m = hl.match(/^lvl[_]?(\d+)[_]?opt[_]?2$/i) || hl.match(/lvl[_]?(\d+)[_]?opt2/);
+    m = hl.match(/^lvl[_]?(\d+)[_]?opt[_]?2$/i);
     if (m) {
       const lv = parseInt(m[1], 10);
-      if (!levelOptions[lv]) levelOptions[lv] = { opt1: '', opt2: '' };
+      if (!levelOptions[lv]) levelOptions[lv] = { opt1: '', opt2: '', opt1Label: '', opt2Label: '' };
       levelOptions[lv].opt2 = (values[i] ?? row[h] ?? '').toString().trim();
+    }
+    m = hl.match(/^lvl[_]?(\d+)[_]?opt[_]?1_text$/i);
+    if (m) {
+      const lv = parseInt(m[1], 10);
+      if (!levelOptions[lv]) levelOptions[lv] = { opt1: '', opt2: '', opt1Label: '', opt2Label: '' };
+      levelOptions[lv].opt1Label = (values[i] ?? row[h] ?? '').toString().trim();
+    }
+    m = hl.match(/^lvl[_]?(\d+)[_]?opt[_]?2_text$/i);
+    if (m) {
+      const lv = parseInt(m[1], 10);
+      if (!levelOptions[lv]) levelOptions[lv] = { opt1: '', opt2: '', opt1Label: '', opt2Label: '' };
+      levelOptions[lv].opt2Label = (values[i] ?? row[h] ?? '').toString().trim();
     }
   });
   return { levelPassives, levelOptions };

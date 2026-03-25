@@ -49,7 +49,9 @@ export function CrewPopup({
                   onSkillModalClose();
                 }}
               >
-                {modalMember.pendingLevelChoice?.opt1 ?? '—'}
+                {modalMember.pendingLevelChoice?.opt1Label?.trim() ||
+                  modalMember.pendingLevelChoice?.opt1 ||
+                  '—'}
               </button>
               <button
                 type="button"
@@ -60,7 +62,9 @@ export function CrewPopup({
                   onSkillModalClose();
                 }}
               >
-                {modalMember.pendingLevelChoice?.opt2 ?? '—'}
+                {modalMember.pendingLevelChoice?.opt2Label?.trim() ||
+                  modalMember.pendingLevelChoice?.opt2 ||
+                  '—'}
               </button>
             </div>
             <button

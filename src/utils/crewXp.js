@@ -48,9 +48,28 @@ function mergePassiveEffects(base, extra) {
 
 /**
  * Парсит текст навыка из таблицы в эффект для боёв/хода/прыжка.
+ * Поддержка JSON из таблицы: {survey: 1} (и «почти JSON» без кавычек у ключей).
  */
 export function parseSkillEffect(text) {
   if (!text || typeof text !== 'string') return null;
+  const trimmed = text.trim();
+  if (trimmed.startsWith('{')) {
+    const tryJson = (raw) => {
+      try {
+        const o = JSON.parse(raw);
+        if (o && typeof o === 'object' && typeof o.survey === 'number' && Number.isFinite(o.survey)) {
+          return { type: 'survey', survey: Math.max(0, Math.floor(o.survey)) };
+        }
+      } catch {
+        const sm = raw.match(/survey\s*:\s*(\d+)/i);
+        if (sm) return { type: 'survey', survey: Math.max(0, parseInt(sm[1], 10)) };
+      }
+      return null;
+    };
+    const fromJson = tryJson(trimmed);
+    if (fromJson) return fromJson;
+  }
+
   const t = text.toLowerCase();
 
   let m = t.match(/\+(\d+)[^\d]*(?:2d6|к\s*броску|к\s*урону)|(?:2d6|урон)[^\d]*\+(\d+)/);
@@ -240,10 +259,19 @@ export function executeManualLevelUp(gameCrew, memberId, crewTemplateRows) {
     m.passiveEffect = mergePassiveEffects(m.passiveEffect, pass);
   }
 
-  const opt1 = tpl?.levelOptions?.[newLevel]?.opt1 ?? '';
-  const opt2 = tpl?.levelOptions?.[newLevel]?.opt2 ?? '';
+  const lo = tpl?.levelOptions?.[newLevel];
+  const opt1 = lo?.opt1 ?? '';
+  const opt2 = lo?.opt2 ?? '';
+  const opt1Label = lo?.opt1Label ?? '';
+  const opt2Label = lo?.opt2Label ?? '';
   if (opt1.trim() || opt2.trim()) {
-    queue.push({ level: newLevel, opt1: opt1.trim() || '—', opt2: opt2.trim() || '—' });
+    queue.push({
+      level: newLevel,
+      opt1: opt1.trim() || '—',
+      opt2: opt2.trim() || '—',
+      opt1Label: String(opt1Label).trim(),
+      opt2Label: String(opt2Label).trim(),
+    });
   }
 
   m.pendingLevelQueue = queue;
@@ -264,10 +292,14 @@ export function confirmLevelSkillChoice(crew, memberId, optIndex) {
   const pending = queue[0];
   if (!pending) return crew;
 
-  const text = optIndex === 2 ? pending.opt2 : pending.opt1;
-  const effect = parseSkillEffect(text);
+  const raw = optIndex === 2 ? pending.opt2 : pending.opt1;
+  const effect = parseSkillEffect(raw);
+  const displayText =
+    optIndex === 2
+      ? (pending.opt2Label?.trim() || raw)
+      : (pending.opt1Label?.trim() || raw);
   const skills = [...(m.skills || [])];
-  skills.push({ text, effect, level: pending.level, pickedAt: optIndex });
+  skills.push({ text: displayText, effect, raw, level: pending.level, pickedAt: optIndex });
 
   queue.shift();
   list[idx] = {
