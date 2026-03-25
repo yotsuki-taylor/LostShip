@@ -169,7 +169,7 @@ export function CrewPopup({
             const skillsList = Array.isArray(c.skills) ? c.skills : [];
             const passiveLines = passiveRestoreLines(c.passiveEffect);
 
-            const toggleAvatarSkillsCard = (e) => {
+            const toggleSkillsPlate = (e) => {
               e.stopPropagation();
               setSkillsCardOpenById((prev) => ({
                 ...prev,
@@ -178,109 +178,115 @@ export function CrewPopup({
             };
 
             return (
-              <div key={c.id} className="flex flex-col items-center p-3 rounded border border-zinc-600 bg-zinc-800/50 relative">
-                <div className="relative w-full rounded overflow-hidden bg-zinc-700 flex-shrink-0 mb-2 aspect-[7/5]">
-                  <button
-                    type="button"
-                    onClick={toggleAvatarSkillsCard}
-                    className="group absolute inset-0 w-full h-full p-0 border-0 bg-transparent cursor-pointer text-left rounded overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/70 focus-visible:ring-inset"
-                    aria-label={showSkillsCard ? 'Показать аватар' : 'Показать навыки'}
-                  >
-                    {!showSkillsCard ? (
-                      <>
-                        <img
-                          src={avatarSrc}
-                          alt=""
-                          className="pointer-events-none block w-full h-full object-contain"
-                          onError={(e) => {
-                            e.target.style.display = 'none';
-                            const fb = e.target.parentElement?.querySelector('.avatar-fallback');
-                            if (fb) fb.classList.remove('hidden');
-                          }}
-                        />
-                        <div className="avatar-fallback pointer-events-none absolute inset-0 hidden flex items-center justify-center text-zinc-500 text-2xl bg-zinc-700">
-                          ?
-                        </div>
-                      </>
-                    ) : (
-                      <div className="absolute inset-0 flex flex-col bg-zinc-900/95 border border-amber-600/35 rounded overflow-hidden shadow-inner">
-                        <div className="shrink-0 px-2 pt-1.5 pb-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-500/90 border-b border-zinc-700/80">
-                          Навыки
-                        </div>
-                        <ul className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-1.5 space-y-1.5 text-[10px] leading-snug text-zinc-300">
-                          {passiveLines.length === 0 && skillsList.length === 0 ? (
-                            <li className="text-zinc-500 italic">Нет выбранных навыков</li>
-                          ) : (
-                            <>
-                              {passiveLines.map((line, pi) => (
-                                <li
-                                  key={`${memberKey}-passive-${pi}`}
-                                  className={`pb-1.5 text-emerald-400/95 ${
-                                    pi === passiveLines.length - 1 && skillsList.length === 0
-                                      ? ''
-                                      : 'border-b border-zinc-700/40'
-                                  }`}
-                                >
-                                  {line}
-                                </li>
-                              ))}
-                              {skillsList.map((s, si) => (
-                                <li
-                                  key={`${memberKey}-skill-${si}`}
-                                  className="border-b border-zinc-700/40 pb-1.5 last:border-b-0 last:pb-0"
-                                >
-                                  {s.text || s.raw || '—'}
-                                </li>
-                              ))}
-                            </>
-                          )}
-                        </ul>
+              <div
+                key={c.id}
+                className="flex flex-col items-center self-start p-3 rounded border border-zinc-600 bg-zinc-800/50 relative w-full cursor-pointer select-none transition-colors hover:border-zinc-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/70 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900"
+                onClick={toggleSkillsPlate}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    toggleSkillsPlate(e);
+                  }
+                }}
+                tabIndex={0}
+                aria-expanded={showSkillsCard}
+                aria-label={showSkillsCard ? 'Показать карточку персонажа' : 'Показать навыки'}
+              >
+                {!showSkillsCard ? (
+                  <>
+                    <div className="relative w-full rounded overflow-hidden bg-zinc-700 flex-shrink-0 mb-2 aspect-[7/5] pointer-events-none">
+                      <img
+                        src={avatarSrc}
+                        alt=""
+                        className="block w-full h-full object-contain"
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                          const fb = e.target.parentElement?.querySelector('.avatar-fallback');
+                          if (fb) fb.classList.remove('hidden');
+                        }}
+                      />
+                      <div className="avatar-fallback absolute inset-0 hidden flex items-center justify-center text-zinc-500 text-2xl bg-zinc-700">
+                        ?
                       </div>
-                    )}
-                  </button>
-                </div>
-                <div className="w-full h-1.5 bg-zinc-700 rounded-full overflow-hidden mb-1">
-                  <div
-                    className={`h-full transition-all ${
-                      c.hp <= 0 ? 'bg-red-600' : c.hp < MAX_HP ? 'bg-amber-500' : 'bg-emerald-500'
-                    }`}
-                    style={{ width: `${Math.max(0, (c.hp / MAX_HP) * 100)}%` }}
-                  />
-                </div>
-                <div className="w-full h-1 bg-zinc-800 rounded-full overflow-hidden mb-2">
-                  <div
-                    className={`h-full transition-all ${alive ? 'bg-sky-500/90' : 'bg-zinc-500/80'}`}
-                    style={{ width: `${xpFill * 100}%` }}
-                    title={
-                      alive
-                        ? `Опыт: ${xp} (нужно ${XP_PER_LEVEL} для уровня)`
-                        : `Опыт: ${xp} (погибший — опыт не начисляется)`
-                    }
-                  />
-                </div>
-                <div className="flex w-full items-center justify-center gap-1.5 gap-y-1 flex-wrap mb-0.5">
-                  <p className="text-sm font-medium text-zinc-200 truncate text-center max-w-[min(100%,8rem)]">
-                    {c.name}
-                  </p>
-                  <span className="text-zinc-500 font-normal text-xs shrink-0">Lv.{c.level ?? 1}</span>
-                  {showLevelBtn && (
-                    <button
-                      type="button"
-                      onClick={handleLevelClick}
-                      className="shrink-0 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500 text-zinc-950 hover:bg-amber-400 shadow-lg animate-pulse"
+                    </div>
+                    <div className="w-full h-1.5 bg-zinc-700 rounded-full overflow-hidden mb-1 pointer-events-none">
+                      <div
+                        className={`h-full transition-all ${
+                          c.hp <= 0 ? 'bg-red-600' : c.hp < MAX_HP ? 'bg-amber-500' : 'bg-emerald-500'
+                        }`}
+                        style={{ width: `${Math.max(0, (c.hp / MAX_HP) * 100)}%` }}
+                      />
+                    </div>
+                    <div className="w-full h-1 bg-zinc-800 rounded-full overflow-hidden mb-2 pointer-events-none">
+                      <div
+                        className={`h-full transition-all ${alive ? 'bg-sky-500/90' : 'bg-zinc-500/80'}`}
+                        style={{ width: `${xpFill * 100}%` }}
+                        title={
+                          alive
+                            ? `Опыт: ${xp} (нужно ${XP_PER_LEVEL} для уровня)`
+                            : `Опыт: ${xp} (погибший — опыт не начисляется)`
+                        }
+                      />
+                    </div>
+                    <div className="flex w-full items-center justify-center gap-1.5 gap-y-1 flex-wrap mb-0.5 pointer-events-none">
+                      <p className="text-sm font-medium text-zinc-200 truncate text-center max-w-[min(100%,8rem)]">
+                        {c.name}
+                      </p>
+                      <span className="text-zinc-500 font-normal text-xs shrink-0">Lv.{c.level ?? 1}</span>
+                      {showLevelBtn && (
+                        <button
+                          type="button"
+                          onClick={handleLevelClick}
+                          className="shrink-0 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500 text-zinc-950 hover:bg-amber-400 shadow-lg animate-pulse pointer-events-auto"
+                        >
+                          Уровень!
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-xs text-zinc-500 truncate w-full text-center pointer-events-none">{c.role}</p>
+                    <p
+                      className={`text-xs mt-0.5 pointer-events-none ${
+                        c.status === 'убит' ? 'text-red-500' : c.status === 'ранен' ? 'text-amber-500' : 'text-emerald-500'
+                      }`}
                     >
-                      Уровень!
-                    </button>
-                  )}
-                </div>
-                <p className="text-xs text-zinc-500 truncate w-full text-center">{c.role}</p>
-                <p
-                  className={`text-xs mt-0.5 ${
-                    c.status === 'убит' ? 'text-red-500' : c.status === 'ранен' ? 'text-amber-500' : 'text-emerald-500'
-                  }`}
-                >
-                  {c.status}
-                </p>
+                      {c.status}
+                    </p>
+                  </>
+                ) : (
+                  <div className="flex flex-col w-full max-h-[min(280px,45vh)] bg-zinc-900/95 border border-amber-600/35 rounded overflow-hidden shadow-inner">
+                    <div className="shrink-0 px-2 pt-1.5 pb-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-500/90 border-b border-zinc-700/80">
+                      Навыки
+                    </div>
+                    <ul className="overflow-y-auto overscroll-contain px-2 py-1.5 space-y-1.5 text-[10px] leading-snug text-zinc-300 max-h-[min(240px,38vh)]">
+                      {passiveLines.length === 0 && skillsList.length === 0 ? (
+                        <li className="text-zinc-500 italic">Нет выбранных навыков</li>
+                      ) : (
+                        <>
+                          {passiveLines.map((line, pi) => (
+                            <li
+                              key={`${memberKey}-passive-${pi}`}
+                              className={`pb-1.5 text-emerald-400/95 ${
+                                pi === passiveLines.length - 1 && skillsList.length === 0
+                                  ? ''
+                                  : 'border-b border-zinc-700/40'
+                              }`}
+                            >
+                              {line}
+                            </li>
+                          ))}
+                          {skillsList.map((s, si) => (
+                            <li
+                              key={`${memberKey}-skill-${si}`}
+                              className="border-b border-zinc-700/40 pb-1.5 last:border-b-0 last:pb-0"
+                            >
+                              {s.text || s.raw || '—'}
+                            </li>
+                          ))}
+                        </>
+                      )}
+                    </ul>
+                  </div>
+                )}
               </div>
             );
           })}
