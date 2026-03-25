@@ -137,13 +137,13 @@ export function CrewPopup({
       )}
 
       <div
-        className="terminal-panel p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border-amber-600/50 cursor-default"
+        className="terminal-panel p-4 sm:p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border-amber-600/50 cursor-default"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="text-amber-500/90 text-sm font-semibold mb-4 border-b border-zinc-600 pb-2">
+        <div className="text-amber-500/90 text-sm sm:text-base font-semibold mb-3 sm:mb-4 border-b border-zinc-600 pb-2">
           [ КОМАНДА ]
         </div>
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4">
           {displayCrew.map((c) => {
             const idSlug = (c.id ?? 'unknown').toString().toLowerCase().replace(/[^a-z0-9а-яё_-]/gi, '_').replace(/_+/g, '_') || 'unknown';
             const avatarSrc = `/LostShip/images/${idSlug}.png`;
@@ -180,7 +180,7 @@ export function CrewPopup({
             return (
               <div
                 key={c.id}
-                className="flex flex-col items-center self-start p-3 rounded border border-zinc-600 bg-zinc-800/50 relative w-full cursor-pointer select-none transition-colors hover:border-zinc-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/70 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900"
+                className="flex flex-col items-center self-start p-3.5 sm:p-4 rounded-lg border border-zinc-600 bg-zinc-800/50 relative w-full cursor-pointer select-none transition-colors hover:border-zinc-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/70 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900"
                 onClick={toggleSkillsPlate}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
@@ -194,7 +194,7 @@ export function CrewPopup({
               >
                 {!showSkillsCard ? (
                   <>
-                    <div className="relative w-full rounded overflow-hidden bg-zinc-700 flex-shrink-0 mb-2 aspect-[7/5] pointer-events-none">
+                    <div className="relative w-full rounded-md overflow-hidden bg-zinc-700 flex-shrink-0 mb-2.5 aspect-[7/5] pointer-events-none">
                       <img
                         src={avatarSrc}
                         alt=""
@@ -205,11 +205,11 @@ export function CrewPopup({
                           if (fb) fb.classList.remove('hidden');
                         }}
                       />
-                      <div className="avatar-fallback absolute inset-0 hidden flex items-center justify-center text-zinc-500 text-2xl bg-zinc-700">
+                      <div className="avatar-fallback absolute inset-0 hidden flex items-center justify-center text-zinc-500 text-3xl bg-zinc-700">
                         ?
                       </div>
                     </div>
-                    <div className="w-full h-1.5 bg-zinc-700 rounded-full overflow-hidden mb-1 pointer-events-none">
+                    <div className="w-full h-2 bg-zinc-700 rounded-full overflow-hidden mb-1.5 pointer-events-none">
                       <div
                         className={`h-full transition-all ${
                           c.hp <= 0 ? 'bg-red-600' : c.hp < MAX_HP ? 'bg-amber-500' : 'bg-emerald-500'
@@ -217,7 +217,7 @@ export function CrewPopup({
                         style={{ width: `${Math.max(0, (c.hp / MAX_HP) * 100)}%` }}
                       />
                     </div>
-                    <div className="w-full h-1 bg-zinc-800 rounded-full overflow-hidden mb-2 pointer-events-none">
+                    <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden mb-2 pointer-events-none">
                       <div
                         className={`h-full transition-all ${alive ? 'bg-sky-500/90' : 'bg-zinc-500/80'}`}
                         style={{ width: `${xpFill * 100}%` }}
@@ -228,24 +228,24 @@ export function CrewPopup({
                         }
                       />
                     </div>
-                    <div className="flex w-full items-center justify-center gap-1.5 gap-y-1 flex-wrap mb-0.5 pointer-events-none">
-                      <p className="text-sm font-medium text-zinc-200 truncate text-center max-w-[min(100%,8rem)]">
+                    <div className="flex w-full items-center justify-center gap-2 gap-y-1 flex-wrap mb-1 pointer-events-none">
+                      <p className="text-base font-medium text-zinc-200 truncate text-center max-w-[min(100%,11rem)]">
                         {c.name}
                       </p>
-                      <span className="text-zinc-500 font-normal text-xs shrink-0">Lv.{c.level ?? 1}</span>
+                      <span className="text-zinc-500 font-normal text-sm shrink-0">Lv.{c.level ?? 1}</span>
                       {showLevelBtn && (
                         <button
                           type="button"
                           onClick={handleLevelClick}
-                          className="shrink-0 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500 text-zinc-950 hover:bg-amber-400 shadow-lg animate-pulse pointer-events-auto"
+                          className="shrink-0 px-2.5 py-1 rounded-md text-xs font-bold bg-amber-500 text-zinc-950 hover:bg-amber-400 shadow-lg animate-pulse pointer-events-auto"
                         >
                           Уровень!
                         </button>
                       )}
                     </div>
-                    <p className="text-xs text-zinc-500 truncate w-full text-center pointer-events-none">{c.role}</p>
+                    <p className="text-sm text-zinc-500 truncate w-full text-center pointer-events-none">{c.role}</p>
                     <p
-                      className={`text-xs mt-0.5 pointer-events-none ${
+                      className={`text-sm mt-0.5 pointer-events-none ${
                         c.status === 'убит' ? 'text-red-500' : c.status === 'ранен' ? 'text-amber-500' : 'text-emerald-500'
                       }`}
                     >
@@ -253,11 +253,11 @@ export function CrewPopup({
                     </p>
                   </>
                 ) : (
-                  <div className="flex flex-col w-full max-h-[min(280px,45vh)] bg-zinc-900/95 border border-amber-600/35 rounded overflow-hidden shadow-inner">
-                    <div className="shrink-0 px-2 pt-1.5 pb-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-500/90 border-b border-zinc-700/80">
+                  <div className="flex flex-col w-full max-h-[min(320px,50vh)] bg-zinc-900/95 border border-amber-600/35 rounded-md overflow-hidden shadow-inner">
+                    <div className="shrink-0 px-2.5 pt-2 pb-1 text-xs font-semibold uppercase tracking-wide text-amber-500/90 border-b border-zinc-700/80">
                       Навыки
                     </div>
-                    <ul className="overflow-y-auto overscroll-contain px-2 py-1.5 space-y-1.5 text-[10px] leading-snug text-zinc-300 max-h-[min(240px,38vh)]">
+                    <ul className="overflow-y-auto overscroll-contain px-2.5 py-2 space-y-2 text-xs leading-snug text-zinc-300 max-h-[min(260px,42vh)]">
                       {passiveLines.length === 0 && skillsList.length === 0 ? (
                         <li className="text-zinc-500 italic">Нет выбранных навыков</li>
                       ) : (
