@@ -8,7 +8,7 @@
     "eventStart": "AirshipFight_0",
     "eventTurns": ["AirshipFight_1", "AirshipFight_2", "AirshipFight_3", "AirshipFight_4", "AirshipFight_5"],
     "endFightEvent": "AirshipFight_Finale",
-    "weight": 3
+    "weight": 5
   },
   {
     "id": "Кракен",
