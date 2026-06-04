@@ -15,7 +15,7 @@ import {
   normalizeCrewMember,
   executeManualLevelUp,
 } from './utils/crewXp';
-import { distributeHullDamageToCrew, rollInitialCrewDamage } from './utils/combatHelpers';
+import { distributeHullDamageToCrew, rollInitialCrewDamage, isDemonSubordinate } from './utils/combatHelpers';
 import { formatDeltaForLog } from './utils/formatHelpers';
 import { useSheetData } from './hooks/useSheetData';
 import { DEFAULT_SHIP_STATS } from './services/sheetLoader';
@@ -84,6 +84,7 @@ export default function App() {
   const [crewSkillModalMember, setCrewSkillModalMember] = useState(null);
   const [gameCrew, setGameCrew] = useState([]);
   const [pendingCrewInit, setPendingCrewInit] = useState(false);
+  const [mapState, setMapState] = useState(null);
   const [musicEnabled, setMusicEnabled] = useState(getMusicEnabled);
   const [nextDestByDestination, setNextDestByDestination] = useState({ lighthouse: 1, demon: 1 });
   const [shownEventIds, setShownEventIds] = useState([]);
@@ -174,7 +175,7 @@ export default function App() {
     playerVars, setPlayerVars,
     eventLog, setEventLog,
     turn,
-    mapState: null, // will be provided via navigation hook, but combat doesn't own mapState directly
+    mapState,
     nextDestByDestination, shownEventIds,
     limits, fights, crew, events,
     findEventByIdOrTitle, getCriticalResource,
@@ -183,10 +184,9 @@ export default function App() {
   });
 
   const {
-    mapState, setMapState,
     isWarping,
     mapSurvey,
-    handleMapNodeClick,
+    handleMapNodeClick: handleMapNodeClickInner,
     handleWarpEnd,
     handleClusterTransition,
   } = useNavigation({
@@ -204,7 +204,16 @@ export default function App() {
     getCriticalResource,
     setCurrentEvent, setIsEventActive, setCurrentCriticalResource,
     startCombat,
+    mapState, setMapState,
   });
+
+  const handleMapNodeClick = useCallback(
+    (targetNodeId) => {
+      setShowMapPopup(false);
+      handleMapNodeClickInner(targetNodeId);
+    },
+    [handleMapNodeClickInner]
+  );
 
   const handleCrewManualLevelUp = useCallback(
     (memberId) => {
@@ -481,7 +490,7 @@ export default function App() {
     setPendingFightEnd(null);
     setShowMenu(false);
     audioRef.current?.play().catch(() => {});
-  }, [shipStats, crew, setPlayerHitTrigger, setEnemyHitTrigger, setMapState, setCurrentFight, setCombatTurn, setEnemyHp, setCombatEvent, setPendingFightEnd]);
+  }, [shipStats, crew, setPlayerHitTrigger, setEnemyHitTrigger, setCurrentFight, setCombatTurn, setEnemyHp, setCombatEvent, setPendingFightEnd]);
 
   const handleContinue = useCallback(() => {
     const saved = loadGame();
@@ -511,7 +520,7 @@ export default function App() {
     setIntroStep(introSlides.length);
     setShowMenu(false);
     audioRef.current?.play().catch(() => {});
-  }, [introSlides.length, shipStats, setPlayerHitTrigger, setEnemyHitTrigger, setMapState, combatCrewHullDamageAccumRef, setCurrentFight, setCombatTurn, setEnemyHp, setCombatEvent, setPendingFightEnd]);
+  }, [introSlides.length, shipStats, setPlayerHitTrigger, setEnemyHitTrigger, combatCrewHullDamageAccumRef, setCurrentFight, setCombatTurn, setEnemyHp, setCombatEvent, setPendingFightEnd]);
 
   const handleRestart = useCallback(() => {
     if (isVictory) clearSave();
@@ -534,7 +543,7 @@ export default function App() {
     setCombatEvent(null);
     setPendingFightEnd(null);
     setShowMenu(true);
-  }, [isVictory, shipStats, setMapState, setCurrentFight, setCombatTurn, setEnemyHp, setCombatEvent, setPendingFightEnd]);
+  }, [isVictory, shipStats, setCurrentFight, setCombatTurn, setEnemyHp, setCombatEvent, setPendingFightEnd]);
 
   if (showMenu) {
     if (loading) {
@@ -793,27 +802,4 @@ export default function App() {
     </div>
     </>
   );
-}
-
-function isDemonSubordinate(demon) {
-  if (demon == null || demon === '') return false;
-  let s = String(demon).trim().replace(/^﻿/, '').normalize('NFKC');
-  s = s.replace(/\s+/g, '').replace(/ё/gi, 'е').toLowerCase();
-  if (s === 'подчинен') return true;
-  // Редкий экспорт из таблиц: латиница вместо похожих кириллических букв
-  const deLatin = s
-    .replace(/e/g, 'е')
-    .replace(/o/g, 'о')
-    .replace(/a/g, 'а')
-    .replace(/p/g, 'р')
-    .replace(/c/g, 'с')
-    .replace(/x/g, 'х')
-    .replace(/y/g, 'у')
-    .replace(/m/g, 'м')
-    .replace(/t/g, 'т')
-    .replace(/h/g, 'н')
-    .replace(/n/g, 'н')
-    .replace(/i/g, 'и')
-    .replace(/d/g, 'д');
-  return deLatin === 'подчинен';
 }

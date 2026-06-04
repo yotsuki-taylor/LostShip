@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { applyDeltas } from '../utils/resourceHelpers';
-import { applyTeamXpReward } from '../utils/crewXp';
+import { applyTeamXpReward, getCombatAttackBonus } from '../utils/crewXp';
 import {
   FLEE_COST,
   FLEE_BUTTON_COST_TEXT,
@@ -13,7 +13,6 @@ import { formatDeltaForLog } from '../utils/formatHelpers';
 import { pickCriticalEvent } from '../services/sheetLoader';
 import { serializeMapState } from '../utils/mapUtils';
 import { saveGame } from '../utils/saveGame';
-import { getCombatAttackBonus } from '../utils/crewXp';
 
 export function useCombat({
   resources, setResources,
