@@ -17,6 +17,7 @@ import {
 } from './utils/crewXp';
 import { distributeHullDamageToCrew, rollInitialCrewDamage, isDemonSubordinate } from './utils/combatHelpers';
 import { formatDeltaForLog } from './utils/formatHelpers';
+import { recordSession } from './utils/analytics';
 import { useSheetData } from './hooks/useSheetData';
 import { DEFAULT_SHIP_STATS } from './services/sheetLoader';
 import { InfoPanel } from './components/InfoPanel';
@@ -69,6 +70,8 @@ function withFixedShipStats(resources) {
 export default function App() {
   const { events, introSlides, shipStats, crew, fights, criticalPenalties, fromSheet, loading } = useSheetData();
   const audioRef = useRef(null);
+  const sessionRecordedRef = useRef(false);
+  const lastFightNameRef = useRef(null);
 
   const [showMenu, setShowMenu] = useState(true);
   const [resources, setResources] = useState(DEFAULT_SHIP_STATS);
@@ -143,8 +146,23 @@ export default function App() {
   const isVictory = playerVars.victory === 'yes' || playerVars.victory === '1' || playerVars.victory === true;
 
   useEffect(() => {
-    if (isGameOver) clearSave();
-  }, [isGameOver]);
+    if (currentFight?.name) lastFightNameRef.current = currentFight.name;
+  }, [currentFight]);
+
+  useEffect(() => {
+    if (isGameOver && !sessionRecordedRef.current) {
+      sessionRecordedRef.current = true;
+      recordSession({ outcome: 'lose', turns, resources, gameCrew, lastFightName: lastFightNameRef.current, playerVars });
+      clearSave();
+    }
+  }, [isGameOver]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (isVictory && !sessionRecordedRef.current) {
+      sessionRecordedRef.current = true;
+      recordSession({ outcome: 'win', turns, resources, gameCrew, lastFightName: lastFightNameRef.current, playerVars });
+    }
+  }, [isVictory]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const { getEventKey, isDestinationEvent, pickStoryEvent, pickRandomEvent, pickMarketEvent, findEventByIdOrTitle } = useEventPicker({
     events, playerVars, resources,
@@ -466,6 +484,8 @@ export default function App() {
   );
 
   const handleNewGame = useCallback(() => {
+    sessionRecordedRef.current = false;
+    lastFightNameRef.current = null;
     clearSave();
     setPlayerHitTrigger(0);
     setEnemyHitTrigger(0);
@@ -495,6 +515,8 @@ export default function App() {
   const handleContinue = useCallback(() => {
     const saved = loadGame();
     if (!saved) return;
+    sessionRecordedRef.current = false;
+    lastFightNameRef.current = null;
     setPlayerHitTrigger(0);
     setEnemyHitTrigger(0);
     setResources(withFixedShipStats(migrateResources(saved.resources) ?? shipStats ?? DEFAULT_SHIP_STATS));
@@ -523,6 +545,8 @@ export default function App() {
   }, [introSlides.length, shipStats, setPlayerHitTrigger, setEnemyHitTrigger, combatCrewHullDamageAccumRef, setCurrentFight, setCombatTurn, setEnemyHp, setCombatEvent, setPendingFightEnd]);
 
   const handleRestart = useCallback(() => {
+    sessionRecordedRef.current = false;
+    lastFightNameRef.current = null;
     if (isVictory) clearSave();
     setResources(withFixedShipStats(shipStats ?? DEFAULT_SHIP_STATS));
     setGameCrew([]);
@@ -640,6 +664,10 @@ export default function App() {
             type="button"
             onClick={() => {
               saveGame({ resources, turn, eventLog, stormProgress: 0, playerVars, crew: gameCrew, mapState: mapState ? serializeMapState(mapState) : null, nextDestByDestination, shownEventIds, currentFight, combatTurn, enemyHp });
+              if (!sessionRecordedRef.current && turn > 0) {
+                sessionRecordedRef.current = true;
+                recordSession({ outcome: 'quit', turns: turn, resources, gameCrew, lastFightName: lastFightNameRef.current, playerVars });
+              }
               setPlayerHitTrigger(0);
               setEnemyHitTrigger(0);
               setShowMenu(true);
