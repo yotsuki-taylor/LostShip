@@ -16,6 +16,7 @@ import {
   applyPassiveCrewEffects,
   buildJumpSuppliesCost,
   distributeHullDamageToCrew,
+  pickWeightedFight,
 } from '../utils/combatHelpers';
 import { formatDeltaForLog } from '../utils/formatHelpers';
 
@@ -142,7 +143,7 @@ export function useNavigation({
       if (nodeType === NODE_TYPE.COMBAT && !fights?.length) nodeType = NODE_TYPE.RANDOM;
 
       if (nodeType === NODE_TYPE.COMBAT && fights?.length > 0) {
-        const fightData = fights[Math.floor(Math.random() * fights.length)];
+        const fightData = pickWeightedFight(fights);
         const initialEnemyHp = Math.max(0, fightData.hp ?? 0);
         const startEvent = fightData.eventStart ? findEventByIdOrTitle(fightData.eventStart) : null;
         startCombat(fightData, { initialEnemyHp });
@@ -279,7 +280,7 @@ export function useNavigation({
       if (nodeType === NODE_TYPE.COMBAT && !fights?.length) nodeType = NODE_TYPE.RANDOM;
 
       if (nodeType === NODE_TYPE.COMBAT && fights?.length > 0) {
-        const fightData = fights[Math.floor(Math.random() * fights.length)];
+        const fightData = pickWeightedFight(fights);
         const initialEnemyHp = Math.max(0, fightData.hp ?? 0);
         const startEvent = fightData.eventStart ? findEventByIdOrTitle(fightData.eventStart) : null;
         startCombat(fightData, { initialEnemyHp });

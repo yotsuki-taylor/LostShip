@@ -7,6 +7,17 @@ export const FLEE_BUTTON_COST_TEXT = (() => {
   return `${L.energy.toLowerCase()}: ${FLEE_COST.energy}, ${L.supplies.toLowerCase()}: ${FLEE_COST.supplies}`;
 })();
 
+/** Выбирает врага из массива с учётом поля weight (по умолчанию 1). */
+export function pickWeightedFight(fights) {
+  const totalWeight = fights.reduce((sum, f) => sum + (f.weight ?? 1), 0);
+  let r = Math.random() * totalWeight;
+  for (const f of fights) {
+    r -= f.weight ?? 1;
+    if (r <= 0) return f;
+  }
+  return fights[fights.length - 1];
+}
+
 export function rollD6() {
   return Math.floor(Math.random() * 6) + 1;
 }
