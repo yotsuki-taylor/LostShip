@@ -1,4 +1,4 @@
-import { useRef, useMemo, useEffect, useCallback } from 'react';
+import { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import { applyDeltas } from '../utils/resourceHelpers';
 import {
   createInitialMapState,
@@ -34,8 +34,8 @@ export function useNavigation({
   getCriticalResource,
   setCurrentEvent, setIsEventActive, setCurrentCriticalResource,
   startCombat,
+  mapState, setMapState,
 }) {
-  const [mapState, setMapState] = useState(null);
   const [isWarping, setIsWarping] = useState(false);
   const pendingJumpRef = useRef(null);
 
@@ -49,7 +49,7 @@ export function useNavigation({
     if (mapSurvey <= 0) return;
     const next = ensureSurveyRevealTypes(mapState, mapSurvey);
     if (next !== mapState) setMapState(next);
-  }, [mapState, mapSurvey]);
+  }, [mapState, mapSurvey, setMapState]);
 
   const handleMapNodeClick = useCallback(
     (targetNodeId) => {
@@ -206,7 +206,7 @@ export function useNavigation({
       combatTurn: finalCombatTurn,
       enemyHp: finalEnemyHp,
     });
-  }, [mapState, gameCrew, resources, limits, turn, playerVars, events, fights, pickStoryEvent, pickRandomEvent, pickMarketEvent, isDestinationEvent, nextDestByDestination, shownEventIds, getEventKey, eventLog, currentFight, combatTurn, enemyHp, findEventByIdOrTitle, getCriticalResource, criticalPenalties, setResources, setGameCrew, setEventLog, setCurrentEvent, setIsEventActive, setCurrentCriticalResource, setNextDestByDestination, setShownEventIds, startCombat]);
+  }, [mapState, setMapState, gameCrew, resources, limits, turn, playerVars, events, fights, pickStoryEvent, pickRandomEvent, pickMarketEvent, isDestinationEvent, nextDestByDestination, shownEventIds, getEventKey, eventLog, currentFight, combatTurn, enemyHp, findEventByIdOrTitle, getCriticalResource, criticalPenalties, setResources, setGameCrew, setEventLog, setCurrentEvent, setIsEventActive, setCurrentCriticalResource, setNextDestByDestination, setShownEventIds, startCombat]);
 
   const handleClusterTransition = useCallback(() => {
     if (isEventActive || isGameOver || isVictory || currentFight || !mapState) return;
@@ -343,7 +343,7 @@ export function useNavigation({
       combatTurn: finalCombatTurn,
       enemyHp: finalEnemyHp,
     });
-  }, [mapState, gameCrew, resources, limits, turn, playerVars, events, fights, pickStoryEvent, pickRandomEvent, pickMarketEvent, isDestinationEvent, nextDestByDestination, shownEventIds, getEventKey, eventLog, currentFight, combatTurn, enemyHp, findEventByIdOrTitle, getCriticalResource, criticalPenalties, isEventActive, isGameOver, isVictory, setResources, setGameCrew, setEventLog, setCurrentEvent, setIsEventActive, setCurrentCriticalResource, setNextDestByDestination, setShownEventIds, startCombat]);
+  }, [mapState, setMapState, gameCrew, resources, limits, turn, playerVars, events, fights, pickStoryEvent, pickRandomEvent, pickMarketEvent, isDestinationEvent, nextDestByDestination, shownEventIds, getEventKey, eventLog, currentFight, combatTurn, enemyHp, findEventByIdOrTitle, getCriticalResource, criticalPenalties, isEventActive, isGameOver, isVictory, setResources, setGameCrew, setEventLog, setCurrentEvent, setIsEventActive, setCurrentCriticalResource, setNextDestByDestination, setShownEventIds, startCombat]);
 
-  return { mapState, setMapState, isWarping, mapSurvey, handleMapNodeClick, handleWarpEnd, handleClusterTransition };
+  return { isWarping, mapSurvey, handleMapNodeClick, handleWarpEnd, handleClusterTransition };
 }
