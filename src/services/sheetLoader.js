@@ -732,6 +732,8 @@ export async function fetchFights() {
       const eventTurn5 = getEventTurn(5);
       const endFightEvent = getRowValue(row, 'endfightevent') || row.endfightevent || row.EndFightEvent || '';
       const eventStart = getRowValue(row, 'eventstart') || getRowValue(row, 'event_start') || row.eventstart || row.EventStart || row['Event Start'] || '';
+      const weightRaw = getRowValue(row, 'weight') || row.weight || row.Weight || '';
+      const weight = parseFloat(weightRaw) || 1;
 
       fights.push({
         id: String(id).trim(),
@@ -742,6 +744,7 @@ export async function fetchFights() {
         eventStart: eventStart?.trim() || null,
         eventTurns: [eventTurn1, eventTurn2, eventTurn3, eventTurn4, eventTurn5],
         endFightEvent,
+        weight,
       });
     }
     return fights;
