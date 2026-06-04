@@ -1,6 +1,35 @@
 import React from 'react';
 import { matchesEventReq } from '../services/sheetLoader';
-import { formatDeltaForDisplay } from '../utils/resourceHelpers';
+import { formatDeltaForDisplay, getResourceLabels, RESOURCE_UNITS, RESOURCE_UI_KEYS } from '../utils/resourceHelpers';
+
+const RESOURCE_ICONS = {
+  hull: '🛡',
+  energy: '⚡',
+  supplies: '📦',
+  morale: '❤',
+};
+
+function ResourceBar({ resources }) {
+  const labels = getResourceLabels();
+  return (
+    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-mono mb-3 pb-2 border-b border-zinc-700">
+      {RESOURCE_UI_KEYS.filter((k) => resources[k] !== undefined).map((key) => {
+        const val = resources[key];
+        const isLow = typeof val === 'number' && val <= 20;
+        const isZero = val === 0 || val === '0';
+        const color = isZero ? 'text-red-500' : isLow ? 'text-amber-400' : 'text-zinc-300';
+        return (
+          <span key={key} className="flex items-center gap-1">
+            <span className="text-zinc-500">{labels[key] ?? key}:</span>
+            <span className={`font-semibold tabular-nums ${color}`}>
+              {val}{RESOURCE_UNITS[key] ?? ''}
+            </span>
+          </span>
+        );
+      })}
+    </div>
+  );
+}
 
 /**
  * Модальное окно для событий — перекрывает экран, невозможно пропустить.
@@ -24,6 +53,7 @@ export function EventPopup({ event, onChoice, disabled, playerVars = {}, resourc
         <div className="text-amber-500/90 text-sm font-semibold mb-2 border-b border-zinc-600 pb-2">
           [ СОБЫТИЕ ]
         </div>
+        <ResourceBar resources={resources} />
         <h2 id="event-title" className="text-xl font-bold text-amber-400 mb-3">
           {event.title}
         </h2>
