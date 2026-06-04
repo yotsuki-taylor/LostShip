@@ -1,12 +1,12 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import { getResourceLimits, getResourceLabels, RESOURCE_UNITS, DELTA_KEYS, STATUS_VAR_KEYS, applyDeltas, applyDifficultyToDeltas, normalizeDeltaToNewFormat, FIXED_SPEED, FIXED_ATTACK } from './utils/resourceHelpers';
+import { getResourceLimits, DELTA_KEYS, STATUS_VAR_KEYS, applyDeltas, applyDifficultyToDeltas, FIXED_SPEED, FIXED_ATTACK } from './utils/resourceHelpers';
 import { saveGame, loadGame, hasSave, clearSave, migrateResources } from './utils/saveGame';
 import {
   createInitialMapState,
   serializeMapState,
   deserializeMapState,
 } from './utils/mapUtils';
-import { matchesEventReq, pickCrewNames, pickCriticalEvent } from './services/sheetLoader';
+import { pickCrewNames, pickCriticalEvent } from './services/sheetLoader';
 import {
   applyTeamXpReward,
   applyCrewMemberXpBySlug,
